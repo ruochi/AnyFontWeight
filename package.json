@@ -1,0 +1,26 @@
+{
+  "name": "anyfontweight",
+  "version": "0.1.0",
+  "description": "Synthesize a font weight by moving glyph outlines along their medial axis",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "vitest run"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "devDependencies": {
+    "typescript": "~5.4.2",
+    "vitest": "^2.1.9"
+  }
+}
