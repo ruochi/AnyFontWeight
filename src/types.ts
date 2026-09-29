@@ -9,14 +9,23 @@ export type Ring = Point[]
  */
 export type Contour = { pts: Point[]; corner: boolean[] }
 
-export type AnyFontWeightOptions = {
+export type VariableGlyphOptions = {
   /** 轮廓现在对应的字重，默认 400 */
   from?: number
-  /** 目标字重 */
-  to: number
   /**
    * 1 em 在当前坐标系里的长度。
    * 不传时用所有点的外框长边估算，字形本身很扁时会偏小，正式使用请传入字号。
    */
   em?: number
+  /** 每相差 100 字重，轮廓每侧沿法线移动多少 em，默认 0.006 */
+  perHundred?: number
+  /** 横笔画相对竖笔画的加粗比例，默认 1 */
+  k?: number
+  /** 每相差 100 字重，整字向中心收缩的比例，默认 0。加粗时外框少长一点，多出的粗细由字腔吸收 */
+  shrink?: number
+}
+
+export type AnyFontWeightOptions = VariableGlyphOptions & {
+  /** 目标字重 */
+  to: number
 }
