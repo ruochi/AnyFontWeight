@@ -8,6 +8,7 @@ export type Font = {
   defaultWeight: number
   /** 只有可变字体才有 */
   axis?: { min: number; max: number }
+  has(ch: string): boolean
   at(weight?: number): { rings(ch: string): Ring[] }
 }
 
@@ -19,15 +20,22 @@ export function openFont(path: string): Font {
   const upm = font.unitsPerEm
   const step = upm * 0.01
   const wght = (font.variationAxes ?? {}).wght
+  const charset = new Set(font.characterSet as number[])
   return {
     upm,
     defaultWeight: wght?.default ?? font['OS/2']?.usWeightClass ?? 400,
     axis: wght ? { min: wght.min, max: wght.max } : undefined,
+    has(ch) {
+      return charset.has(ch.codePointAt(0)!)
+    },
     at(weight) {
       const inst = weight !== undefined && wght ? font.getVariation({ wght: weight }) : font
       return {
         rings(ch) {
-          const g = inst.glyphForCodePoint(ch.codePointAt(0)!)
+          const cp = ch.codePointAt(0)!
+          if (!charset.has(cp)) return []
+          const g = inst.glyphForCodePoint(cp)
+          if (!g || g.id === 0) return []
           return union(flatten(g.path.commands as Cmd[], step))
         },
       }
