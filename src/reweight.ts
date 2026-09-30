@@ -61,22 +61,33 @@ const MITER_LIMIT = 3
  * 平滑不跨过拐角，否则横边会混进竖边的位移。
  */
 export function reweight(m: MedialGlyph, p: ReweightParams): Ring[] {
-  const rings: Ring[] = []
   const density = p.gamma ? Math.pow(Math.max(1e-3, m.space) / SPACE_REF, p.gamma) : 1
-  const s = 1 - p.sigma
-  const place = (v: Point): Point => ({ x: m.center.x + (v.x - m.center.x) * s, y: m.center.y + (v.y - m.center.y) * s })
-  for (const ring of m.contours) {
+  const edgeDs = m.contours.map((ring) => {
     const n = ring.length
-    const edgeN: Point[] = []
     const raw: number[] = []
     for (let i = 0; i < n; i++) {
       const a = ring[i]!
       const b = ring[(i + 1) % n]!
       const e = edgeNormal(a.p, b.p)
-      edgeN.push(e)
       raw.push((displacement(a, p, density, e) + displacement(b, p, density, e)) / 2)
     }
-    const edgeD = smoothEdges(raw, ring)
+    return smoothEdges(raw, ring)
+  })
+  return offsetEdges(m, edgeDs, p.sigma)
+}
+
+/**
+ * 边 i（连着点 i 和 i+1）沿自己的外法线平移 `edgeDs[c][i]`，拐角斜接，再解开拐角处的小圈。
+ * `sigma` 是整字向中心收缩的比例。
+ */
+export function offsetEdges(m: MedialGlyph, edgeDs: number[][], sigma = 0): Ring[] {
+  const rings: Ring[] = []
+  const s = 1 - sigma
+  const place = (v: Point): Point => ({ x: m.center.x + (v.x - m.center.x) * s, y: m.center.y + (v.y - m.center.y) * s })
+  m.contours.forEach((ring, c) => {
+    const n = ring.length
+    const edgeD = edgeDs[c]!
+    const edgeN = ring.map((a, i) => edgeNormal(a.p, ring[(i + 1) % n]!.p))
     const pts: Point[] = []
     for (let i = 0; i < n; i++) {
       const n1 = edgeN[(i - 1 + n) % n]!
@@ -87,7 +98,7 @@ export function reweight(m: MedialGlyph, p: ReweightParams): Ring[] {
     }
     untangle(pts, loopWindow(ring, edgeD))
     rings.push(pts)
-  }
+  })
   return rings
 }
 
