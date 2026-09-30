@@ -71,6 +71,8 @@ npm run weights -- <字体文件> --chars 永国圆 --out weights.png
 
 静态字体从它自己的字重出发，画出 300–900。可变字体会同时取出每个字重的真实轮廓，叠在一起画，并打印重合率和面积比。`--per100`、`--k`、`--shrink` 对应上面的选项。
 
+`npx tsx scripts/research.ts <可变字体目录>` 在一组可变字体上比较几种位移来源：现有公式、每款字体单独搜参数、留一款字体做测试的回归模型，以及直接沿法线移到真实轮廓上的上限。
+
 测试里用到的真实字重数据从寒蝉端黑体抽取（`npx tsx scripts/fixtures.ts <ChillDuanSansVF.ttf>`），按 SIL OFL 1.1 授权，见 [test/fixtures/ChillDuanSans-OFL.txt](test/fixtures/ChillDuanSans-OFL.txt)。
 
 ## 许可
