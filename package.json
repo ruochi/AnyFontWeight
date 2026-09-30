@@ -13,13 +13,20 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "vitest run"
+    "test": "vitest run",
+    "weights": "tsx scripts/weights.ts"
   },
   "engines": {
     "node": ">=20"
   },
   "license": "MIT",
   "devDependencies": {
+    "@resvg/resvg-js": "^2.6.2",
+    "@types/clipper-lib": "^6.4.0",
+    "@types/fontkit": "^2.0.9",
+    "clipper-lib": "^6.4.2",
+    "fontkit": "^2.0.4",
+    "tsx": "^4.23.15",
     "typescript": "~5.4.2",
     "vitest": "^2.1.9"
   }

@@ -1,7 +1,7 @@
 import { boundsOf, prepareRings } from './geometry.js'
 import { computeMedial } from './medial.js'
 import { paramsForWeight, reweight } from './reweight.js'
-import type { AnyFontWeightOptions, Ring } from './types.js'
+import type { AnyFontWeightOptions, Ring, VariableGlyphOptions } from './types.js'
 
 /**
  * 把一组闭合轮廓从 `from` 字重变到 `to` 字重。
@@ -9,8 +9,19 @@ import type { AnyFontWeightOptions, Ring } from './types.js'
  * 相同字重时返回加密、统一朝向之后的轮廓，形状不变。
  */
 export function anyFontWeight(rings: Ring[], options: AnyFontWeightOptions): Ring[] {
-  const em = options.em ?? Math.max(boundsOf(rings).width, boundsOf(rings).height, 1)
+  return variableGlyph(rings, options)(options.to)
+}
+
+/**
+ * 量一次笔画宽度，返回一个按字重取轮廓的函数，适合连续调节字重。
+ * 各字重的输出点数相同，点和点一一对应，可以直接当作可变字体的母版。
+ */
+export function variableGlyph(rings: Ring[], options: VariableGlyphOptions = {}): (to: number) => Ring[] {
+  const from = options.from ?? 400
+  const box = boundsOf(rings)
+  const em = options.em ?? Math.max(box.width, box.height, 1)
   const contours = prepareRings(rings, Math.max(em * 0.008, 1e-4))
-  if (contours.length === 0) return []
-  return reweight(computeMedial(contours, em), paramsForWeight(options.from ?? 400, options.to, em))
+  if (contours.length === 0) return () => []
+  const medial = computeMedial(contours, em)
+  return (to) => reweight(medial, paramsForWeight(from, to, em, options))
 }

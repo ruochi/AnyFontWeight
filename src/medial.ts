@@ -29,10 +29,21 @@ export type MedialOptions = {
   spaceCap: number
   /** 接触角阈值（度）。更小的圆落在拐角上，不当成笔画宽度 */
   minContactAngle: number
+  /**
+   * 内侧圆的接触角阈值，不传时同 `minContactAngle`。
+   * 笔画末端的锐角里，内切圆的接触角是 180° 减去夹角，阈值太低会把尖角当成细笔画，变细时尖角留着不动。
+   */
+  minInnerContactAngle?: number
   medianRadius: number
 }
 
-export const DEFAULT_MEDIAL: MedialOptions = { rOutMax: 0.4, spaceCap: 0.15, minContactAngle: 110, medianRadius: 3 }
+export const DEFAULT_MEDIAL: MedialOptions = {
+  rOutMax: 0.4,
+  spaceCap: 0.15,
+  minContactAngle: 110,
+  minInnerContactAngle: 150,
+  medianRadius: 3,
+}
 
 class Grid {
   private cells = new Map<number, number[]>()
@@ -140,7 +151,7 @@ export function computeMedial(contours: Contour[], em: number, opts: MedialOptio
       rOut: outer.r,
       cIn: inner.c,
       cOut: outer.c,
-      reliableIn: contactAngle(p, inner.c, all[inner.contact]) >= opts.minContactAngle,
+      reliableIn: contactAngle(p, inner.c, all[inner.contact]) >= (opts.minInnerContactAngle ?? opts.minContactAngle),
       reliableOut: outer.contact < 0 || contactAngle(p, outer.c, all[outer.contact]) >= opts.minContactAngle,
       corner: contours[ci]!.corner[k]!,
     }
