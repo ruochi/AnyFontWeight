@@ -5,7 +5,9 @@
  * - grid：每款字体单独搜 perHundred / k / shrink，相当于拿到这款字体的一个粗体做标定
  * - ridge / gbdt：用其他字体的 oracle 位移训练每条边的位移，留一款字体做测试
  *
- *   npx tsx scripts/research.ts [/tmp/fonts/ready]
+ *   npx tsx scripts/research.ts [/tmp/fonts/ready] [--curve]
+ *
+ * `--curve` 只跑 gbdt，看训练字体数量对留出字体的影响。
  */
 import { readdirSync, writeFileSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
@@ -18,7 +20,7 @@ import { selfIntersections } from './check.js'
 import { openFont, type Font } from './glyphs.js'
 import { iou, rasterize, type Box, type Mask } from './raster.js'
 
-const DIR = process.argv[2] ?? '/tmp/fonts/ready'
+const DIR = process.argv.slice(2).find((a) => !a.startsWith('--')) ?? '/tmp/fonts/ready'
 const OUT = '/opt/cursor/artifacts/research'
 mkdirSync(OUT, { recursive: true })
 
@@ -494,4 +496,44 @@ function main() {
   console.log(md)
 }
 
-main()
+/** 训练字体数量对留出字体效果的影响 */
+function curve() {
+  const samples = load()
+  const fonts = [...new Set(samples.map((s) => s.font))]
+  const sizes = [2, 4, 6, fonts.length - 1]
+  const REPEATS = 3
+  let md = '# 学习曲线（gbdt，留一款字体做测试，平均 IoU）\n\n'
+  for (const w of TARGETS) {
+    const byFont: Record<string, number[]> = {}
+    for (const font of fonts) {
+      const test = samples.filter((s) => s.font === font)
+      const others = fonts.filter((f) => f !== font)
+      byFont[font] = sizes.map((n) => {
+        const reps = n === others.length ? 1 : REPEATS
+        let sum = 0
+        for (let r = 0; r < reps; r++) {
+          const pick = new Set([...others].sort(() => Math.random() - 0.5).slice(0, n))
+          const { X, y } = trainingSet(
+            samples.filter((s) => pick.has(s.font)),
+            w,
+          )
+          const model = gbdt(X, y)
+          sum += test.reduce((a, s) => a + score(s, w, offsetEdges(s.medial, toEdgeDs(s, model))).iou, 0) / test.length
+        }
+        return sum / reps
+      })
+      console.error(`${FROM}->${w} ${font.padEnd(22)} ${byFont[font]!.map((v) => v.toFixed(3)).join('  ')}`)
+    }
+    md += `## ${FROM} → ${w}\n\n| 字体 | ${sizes.map((n) => `训练 ${n} 款`).join(' | ')} |\n|---|${sizes.map(() => '---').join('|')}|\n`
+    for (const font of fonts) md += `| ${font} | ${byFont[font]!.map((v) => v.toFixed(3)).join(' | ')} |\n`
+    const avg = (list: string[]) => sizes.map((_, i) => list.reduce((a, f) => a + byFont[f]![i]!, 0) / list.length)
+    md += `| **平均** | ${avg(fonts).map((v) => `**${v.toFixed(3)}**`).join(' | ')} |\n`
+    const sans = fonts.filter((f) => !/Serif/.test(f))
+    md += `| **无衬线平均** | ${avg(sans).map((v) => `**${v.toFixed(3)}**`).join(' | ')} |\n\n`
+  }
+  writeFileSync(join(OUT, 'CURVE.md'), md)
+  console.log(md)
+}
+
+if (process.argv.includes('--curve')) curve()
+else main()
