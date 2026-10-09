@@ -1,0 +1,15 @@
+{
+  "lines": ["来日", "方长"],
+  "font": "NotoSans",
+  "weight": 700,
+  "tracking": -0.02,
+  "leading": 0.96,
+  "indent": [0, 0.5],
+  "steps": [
+    { "op": "offset", "delta": 0.01, "join": "miter" },
+    { "op": "geometrize", "tolerance": 0.012, "snap": 45 },
+    { "op": "inline", "width": 0.008, "inset": 0.014 }
+  ],
+  "fill": "#1d3b2a",
+  "background": "#e9e2cf"
+}

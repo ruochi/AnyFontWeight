@@ -1,0 +1,33 @@
+{
+  "lines": [
+    "高级",
+    "动物"
+  ],
+  "font": "NotoSans",
+  "weight": 700,
+  "tracking": -0.06,
+  "leading": 0.9,
+  "skew": 10,
+  "steps": [
+    {
+      "op": "offset",
+      "delta": 0.012,
+      "join": "miter"
+    },
+    {
+      "op": "cap",
+      "style": "cut",
+      "angle": 50,
+      "select": {
+        "free": "open",
+        "dir": [
+          "下",
+          "左下",
+          "右下"
+        ]
+      }
+    }
+  ],
+  "fill": "#111111",
+  "background": "#f2d23c"
+}

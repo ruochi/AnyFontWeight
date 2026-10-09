@@ -16,7 +16,8 @@
     "test": "vitest run",
     "lab:analyze": "tsx lab/deform/analyze.ts",
     "lab:render": "tsx lab/deform/render.ts",
-    "lab:check": "tsc -p lab"
+    "lab:check": "tsc -p lab",
+    "lab:gallery": "tsx lab/deform/gallery.ts"
   },
   "engines": {
     "node": ">=20"

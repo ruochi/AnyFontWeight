@@ -1,0 +1,30 @@
+{
+  "lines": [
+    "超能力"
+  ],
+  "font": "NotoSans",
+  "weight": 700,
+  "tracking": -0.07,
+  "skew": 12,
+  "post": [
+    {
+      "op": "slice",
+      "angle": -14,
+      "gap": 0.03,
+      "at": [
+        0.5
+      ],
+      "shift": 0.09
+    }
+  ],
+  "fill": "linear-gradient(to bottom, #ffffff, #a8e4ff)",
+  "glow": "26 #3fb6ff",
+  "background": "#0a1630",
+  "steps": [
+    {
+      "op": "offset",
+      "delta": 0.018,
+      "join": "miter"
+    }
+  ]
+}

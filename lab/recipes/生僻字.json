@@ -1,0 +1,22 @@
+{
+  "lines": [
+    "生僻字"
+  ],
+  "font": "NotoSans",
+  "weight": 700,
+  "synthWeight": 850,
+  "tracking": -0.03,
+  "steps": [
+    {
+      "op": "round",
+      "convex": 0.03,
+      "concave": 0.012
+    }
+  ],
+  "fill": "#ff7a59",
+  "attrs": {
+    "inner-shadow": "0 -10 14 #00000066",
+    "shadow": "0 14 0 #b23a1f"
+  },
+  "background": "#fff3e6"
+}
