@@ -23,7 +23,7 @@ export type SwashParams = {
 
 const DEG = Math.PI / 180
 
-type Sample = { p: Point; t: Point; s: number }
+export type Sample = { p: Point; t: Point; s: number }
 
 /** 按曲率分段积分出中心线。每段曲率从 k0 线性变到 k1（回旋曲线），切线连续。 */
 function centerline(start: Point, dir: Point, pieces: Array<{ len: number; k0: number; k1: number }>, ds: number): Sample[] {
@@ -51,6 +51,25 @@ function smoothstep(e0: number, e1: number, x: number): number {
   return t * t * (3 - 2 * t)
 }
 
+/** 飘带的中心线：先按 `length`、`bend` 走一段，再按 `curl` 卷起。`half` 是起点的半宽，卷的半径不小于它。 */
+export function swashCenterline(start: Point, dir: Point, params: SwashParams, em: number, half: number): Sample[] {
+  const length = (params.length ?? 0.3) * em
+  const bend = (params.bend ?? 0) * DEG
+  const curl = params.curl ?? 0
+  const pieces: Array<{ len: number; k0: number; k1: number }> = []
+  if (length > 0) pieces.push({ len: length, k0: 0, k1: (2 * bend) / length })
+  const kEnd = length > 0 ? (2 * bend) / length : 0
+  if (curl !== 0) {
+    const sign = Math.sign(curl)
+    const r0 = Math.max((params.curlRadius ?? 0.12) * em, half * 1.2)
+    const r1 = r0 * (params.curlTighten ?? 0.4)
+    pieces.push({ len: r0 * 0.8, k0: kEnd, k1: sign / r0 })
+    const angle = Math.abs(curl) * 2 * Math.PI
+    pieces.push({ len: (2 * angle) / (1 / r0 + 1 / r1), k0: sign / r0, k1: sign / r1 })
+  }
+  return centerline(start, dir, pieces, em * 0.004)
+}
+
 /**
  * 把末端那段转弯换成一条从 A 出发、绕过新末端、回到 B 的折线。
  * 中心线从 A、B 的中点出发，沿末端方向延伸。
@@ -63,21 +82,7 @@ export function swashOutline(t: Terminal, params: SwashParams, em: number): Poin
   const swell = params.swell ?? 0
   const hold = params.holdWidth ?? 0.25
   const half0 = t.width / 2
-  const pieces: Array<{ len: number; k0: number; k1: number }> = []
-  if (length > 0) pieces.push({ len: length, k0: 0, k1: (2 * bend) / length })
-  let kEnd = length > 0 ? (2 * bend) / length : 0
-  if (curl !== 0) {
-    const sign = Math.sign(curl)
-    const r0 = Math.max((params.curlRadius ?? 0.12) * em, half0 * 1.2)
-    const r1 = r0 * (params.curlTighten ?? 0.4)
-    const lead = r0 * 0.8
-    pieces.push({ len: lead, k0: kEnd, k1: sign / r0 })
-    const angle = Math.abs(curl) * 2 * Math.PI
-    const len = (2 * angle) / (1 / r0 + 1 / r1)
-    pieces.push({ len, k0: sign / r0, k1: sign / r1 })
-    kEnd = sign / r1
-  }
-  const line = centerline(t.base, t.dir, pieces, em * 0.004)
+  const line = swashCenterline(t.base, t.dir, params, em, half0)
   const total = line[line.length - 1]!.s || 1
   const nA = { x: (t.A.x - t.base.x) / (half0 || 1), y: (t.A.y - t.base.y) / (half0 || 1) }
   const side = Math.sign(-t.dir.y * nA.x + t.dir.x * nA.y) || 1

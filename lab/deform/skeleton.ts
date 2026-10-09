@@ -125,7 +125,7 @@ function crossing(sk: Uint8Array, w: number, i: number): number {
   return t
 }
 
-function polyLength(pts: Point[]): number {
+export function polyLength(pts: Point[]): number {
   let s = 0
   for (let i = 1; i < pts.length; i++) s += Math.hypot(pts[i]!.x - pts[i - 1]!.x, pts[i]!.y - pts[i - 1]!.y)
   return s
@@ -487,7 +487,7 @@ function tangentAt(e: SkEdge, fromNode: number, reach: number): Point {
   return { x: (q.x - p0.x) / l, y: (q.y - p0.y) / l }
 }
 
-function classify(pts: Point[], em: number): { type: StrokeType; angle: number } {
+export function classify(pts: Point[], em: number): { type: StrokeType; angle: number } {
   const length = polyLength(pts)
   const a = pts[0]!
   const b = pts[pts.length - 1]!

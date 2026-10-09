@@ -216,3 +216,47 @@ export function ringsBounds(rings: Ring[]): { minX: number; minY: number; maxX: 
     }
   return { minX, minY, maxX, maxY }
 }
+
+/** 每段绕自己的中点转到最近的 snap 整数倍方向，再求相邻两段的交点当新顶点。 */
+export function snapLine(pts: Point[], snap: number, closed: boolean): Point[] {
+  const step = (snap * Math.PI) / 180
+  type Seg = { m: Point; d: Point; len: number }
+  const segs: Seg[] = []
+  const n = pts.length
+  for (let i = 0; i < (closed ? n : n - 1); i++) {
+    const a = pts[i]!
+    const b = pts[(i + 1) % n]!
+    const len = Math.hypot(b.x - a.x, b.y - a.y)
+    if (len < 1e-6) continue
+    const ang = Math.round(Math.atan2(b.y - a.y, b.x - a.x) / step) * step
+    const d = { x: Math.cos(ang), y: Math.sin(ang) }
+    const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
+    const prev = segs[segs.length - 1]
+    if (prev && Math.abs(prev.d.x * d.y - prev.d.y * d.x) < 1e-6 && prev.d.x * d.x + prev.d.y * d.y > 0) {
+      const t = prev.len + len
+      prev.m = { x: (prev.m.x * prev.len + m.x * len) / t, y: (prev.m.y * prev.len + m.y * len) / t }
+      prev.len = t
+      continue
+    }
+    segs.push({ m, d, len })
+  }
+  if (segs.length === 0) return pts
+  const meet = (s: Seg, t: Seg): Point => {
+    const den = s.d.x * t.d.y - s.d.y * t.d.x
+    if (Math.abs(den) < 1e-9) return { x: (s.m.x + t.m.x) / 2, y: (s.m.y + t.m.y) / 2 }
+    const u = ((t.m.x - s.m.x) * t.d.y - (t.m.y - s.m.y) * t.d.x) / den
+    const p = { x: s.m.x + s.d.x * u, y: s.m.y + s.d.y * u }
+    const far = Math.max(s.len, t.len) * 1.5
+    if (Math.hypot(p.x - s.m.x, p.y - s.m.y) > far) return { x: (s.m.x + t.m.x) / 2, y: (s.m.y + t.m.y) / 2 }
+    return p
+  }
+  const proj = (s: Seg, p: Point): Point => {
+    const u = (p.x - s.m.x) * s.d.x + (p.y - s.m.y) * s.d.y
+    return { x: s.m.x + s.d.x * u, y: s.m.y + s.d.y * u }
+  }
+  if (closed) return segs.map((s, i) => meet(segs[(i - 1 + segs.length) % segs.length]!, s))
+  const out = [proj(segs[0]!, pts[0]!)]
+  for (let i = 1; i < segs.length; i++) out.push(meet(segs[i - 1]!, segs[i]!))
+  out.push(proj(segs[segs.length - 1]!, pts[n - 1]!))
+  return out
+}
