@@ -1,8 +1,11 @@
+import { glyph } from 'flexlayer'
 import type { Point, Ring } from '../../src/types.js'
+import { union } from './bool.js'
 import { esc, layerDoc, n } from './draw.js'
-import { loadGlyphs, type SourceGlyph } from './glyphs.js'
-import { mapRings, ringsBounds, ringsToPath, simplifyRing } from './outline.js'
-import { spliceContour, swashOutline, type SwashParams } from './swash.js'
+import { loadGlyphs } from './glyphs.js'
+import { runSteps, type Context, type Step, type Work } from './ops.js'
+import { mapRings, pathToRings, ringsBounds, ringsToPath, simplifyRing } from './outline.js'
+import type { SwashParams } from './swash.js'
 
 /** 长度单位都是 em，角度是度。 */
 export type Recipe = {
@@ -24,20 +27,27 @@ export type Recipe = {
   glyphs?: Record<string, { dx?: number; dy?: number; scale?: number; rotate?: number }>
   /** 整体倾斜，正数向右倒 */
   skew?: number
-  /** `target` 写「字.末端号」，如 `爱.12`；同一个字出现多次时写「字序号.末端号」，如 `5.12` */
+  /** 旧写法，等于排在最前面的一步 `{ op: 'swash', items: swashes }` */
   swashes?: Array<{ target: string } & SwashParams>
+  /** 逐字执行的操作，在字的本地坐标里做 */
+  steps?: Step[]
+  /** 排版之后对整段文字执行的操作 */
+  post?: Step[]
   fill?: string
   glow?: string
+  /** 原样写到字形 path 上的 flexlayer 属性，比如 `{ "inner-shadow": "0 6 10 #0006" }` */
+  attrs?: Record<string, string>
   background?: string
   decor?: Decor[]
   /** 画面四周留白 */
   padding?: number
 }
 
+type Color = { color?: string }
 export type Decor =
-  | { type: 'sparkle'; at: [number, number]; size: number; color?: string }
-  | { type: 'dot'; at: [number, number]; size: number; color?: string }
-  | {
+  | ({ type: 'sparkle'; at: [number, number]; size: number } & Color)
+  | ({ type: 'dot'; at: [number, number]; size: number } & Color)
+  | ({
       type: 'orbit'
       center: [number, number]
       rx: number
@@ -46,8 +56,21 @@ export type Decor =
       from?: number
       to?: number
       width?: number
-      color?: string
-    }
+    } & Color)
+  /** 折线，`dash` 是 [实, 虚] 的 em 长度 */
+  | ({ type: 'line'; points: Array<[number, number]>; width?: number; dash?: [number, number]; cap?: 'round' | 'butt' } & Color)
+  /** 小字，比如拼音、英文副标题。`at` 是文字块的中心 */
+  | ({
+      type: 'text'
+      text: string
+      at: [number, number]
+      size: number
+      font?: string
+      weight?: number
+      letterSpacing?: number
+      vertical?: boolean
+      rotate?: number
+    } & Color)
 
 export function recipeText(r: Recipe): string {
   return r.lines.join('')
@@ -57,73 +80,67 @@ export function sourceOptions(r: Recipe) {
   return { font: r.font ?? 'NotoSans', size: r.size ?? 400, weight: r.weight ?? 700, synthWeight: r.synthWeight, contrast: r.contrast }
 }
 
-function resolveTarget(target: string, glyphs: SourceGlyph[]): { glyph: SourceGlyph; terminal: number } {
-  const dot = target.lastIndexOf('.')
-  const head = target.slice(0, dot)
-  const k = Number(target.slice(dot + 1)) - 1
-  const glyph = /^\d+$/.test(head) ? glyphs[Number(head)] : glyphs.find((g) => g.char === head)
-  if (!glyph) throw new Error(`找不到字 ${head}`)
-  if (!glyph.analysis.terminals[k]) throw new Error(`${glyph.char} 没有第 ${k + 1} 个末端，共 ${glyph.analysis.terminals.length} 个`)
-  return { glyph, terminal: k }
+export function recipeSteps(r: Recipe): Step[] {
+  return [...(r.swashes?.length ? [{ op: 'swash' as const, items: r.swashes }] : []), ...(r.steps ?? [])]
 }
 
-function deformGlyph(g: SourceGlyph, swashes: Array<{ terminal: number; params: SwashParams }>, em: number): Ring[] {
-  const byContour = new Map<number, Array<{ a: number; b: number; with: Point[] }>>()
-  for (const s of swashes) {
-    const t = g.analysis.terminals[s.terminal]!
-    const list = byContour.get(t.contour) ?? []
-    list.push({ a: t.a, b: t.b, with: swashOutline(t, s.params, em) })
-    byContour.set(t.contour, list)
-  }
-  return g.analysis.contours.map((c, ci) => spliceContour(c.pts, byContour.get(ci) ?? []))
+export async function glyphWorks(r: Recipe): Promise<{ works: Work[]; ctx: Context; baseline: number; advances: number[] }> {
+  const opts = sourceOptions(r)
+  const glyphs = await loadGlyphs(recipeText(r), opts)
+  const works: Work[] = glyphs.map((g) => ({
+    rings: g.rings,
+    box: { x: 0, y: 0, w: g.advance, h: g.height },
+    em: opts.size,
+    index: g.index,
+    char: g.char,
+    cache: { analysis: g.analysis },
+  }))
+  return { works, ctx: { chars: glyphs.map((g) => g.char) }, baseline: glyphs[0]?.baseline ?? opts.size, advances: glyphs.map((g) => g.advance) }
 }
 
 export type Composition = { rings: Ring[]; decorShapes: string[]; decorSvg: string[]; bounds: { minX: number; minY: number; maxX: number; maxY: number } }
 
 export async function compose(r: Recipe): Promise<Composition> {
-  const opts = sourceOptions(r)
-  const em = opts.size
-  const glyphs = await loadGlyphs(recipeText(r), opts)
-  const plan = new Map<number, Array<{ terminal: number; params: SwashParams }>>()
-  for (const s of r.swashes ?? []) {
-    const { target, ...params } = s
-    const hit = resolveTarget(target, glyphs)
-    const list = plan.get(hit.glyph.index) ?? []
-    list.push({ terminal: hit.terminal, params })
-    plan.set(hit.glyph.index, list)
-  }
+  const em = sourceOptions(r).size
+  const { works, ctx, baseline, advances } = await glyphWorks(r)
+  const steps = recipeSteps(r)
+  for (const w of works) runSteps(w, steps, ctx)
   const tracking = (r.tracking ?? 0) * em
   const leading = (r.leading ?? 1) * em
   const skew = Math.tan(((r.skew ?? 0) * Math.PI) / 180)
-  const baseline0 = glyphs[0]?.baseline ?? em
-  const out: Ring[] = []
+  let out: Ring[] = []
   let gi = 0
   r.lines.forEach((line, li) => {
     let x = (r.indent?.[li] ?? 0) * em
     const y = li * leading
     for (const _ of Array.from(line)) {
-      const g = glyphs[gi]!
-      const tweak = r.glyphs?.[String(g.index)] ?? r.glyphs?.[g.char] ?? {}
-      const rings = deformGlyph(g, plan.get(g.index) ?? [], em)
-      const cx = g.advance / 2
-      const cy = g.height / 2
+      const w = works[gi]!
+      const tweak = r.glyphs?.[String(w.index)] ?? r.glyphs?.[w.char] ?? {}
+      const cx = w.box.w / 2
+      const cy = w.box.h / 2
       const sc = tweak.scale ?? 1
       const rot = ((tweak.rotate ?? 0) * Math.PI) / 180
       const ox = x + (tweak.dx ?? 0) * em
       const oy = y + (tweak.dy ?? 0) * em
-      const placed = mapRings(rings, (p) => {
+      const placed = mapRings(w.rings, (p) => {
         const dx = (p.x - cx) * sc
         const dy = (p.y - cy) * sc
         const px = ox + cx + dx * Math.cos(rot) - dy * Math.sin(rot)
         const py = oy + cy + dx * Math.sin(rot) + dy * Math.cos(rot)
-        return { x: px + (baseline0 - py) * skew, y: py }
+        return { x: px + (baseline - py) * skew, y: py }
       })
       out.push(...placed.map((ring) => simplifyRing(ring, em * 0.0006)))
-      x += g.advance + tracking
+      x += advances[gi]! + tracking
       gi++
     }
   })
-  const { shapes, svg, points } = drawDecor(r.decor ?? [], em, r.fill ?? '#ffffff')
+  if (r.post?.length) {
+    const b = ringsBounds(out)
+    const whole: Work = { rings: union(out), box: { x: b.minX, y: b.minY, w: b.maxX - b.minX, h: b.maxY - b.minY }, em, index: -1, char: '', cache: {} }
+    runSteps(whole, r.post, ctx)
+    out = whole.rings
+  }
+  const { shapes, svg, points } = await drawDecor(r.decor ?? [], em, r.fill ?? '#ffffff')
   const b = ringsBounds([...out, points])
   return { rings: out, decorShapes: shapes, decorSvg: svg, bounds: b }
 }
@@ -150,7 +167,35 @@ function orbitPoints(d: Extract<Decor, { type: 'orbit' }>, em: number): Point[] 
   return pts
 }
 
-function drawDecor(decor: Decor[], em: number, fallback: string): { shapes: string[]; svg: string[]; points: Point[] } {
+/** 把小字排成矢量轮廓，横排或竖排，再绕中心旋转。 */
+async function textRings(d: Extract<Decor, { type: 'text' }>, em: number): Promise<Ring[]> {
+  const size = d.size * em
+  const gs = await glyph(d.text, { font: d.font ?? 'NotoSans', size, weight: d.weight ?? 500 })
+  const gap = (d.letterSpacing ?? 0) * em
+  const rings: Ring[] = []
+  let x = 0
+  let y = 0
+  for (const g of gs) {
+    const rs = pathToRings(g.d, size * 0.002)
+    const dx = d.vertical ? -g.width / 2 : x
+    const dy = d.vertical ? y : 0
+    rings.push(...mapRings(rs, (p) => ({ x: p.x + dx, y: p.y + dy })))
+    if (d.vertical) y += g.height * 0.82 + gap
+    else x += g.width + gap
+  }
+  if (!rings.length) return []
+  const b = ringsBounds(rings)
+  const cx = (b.minX + b.maxX) / 2
+  const cy = (b.minY + b.maxY) / 2
+  const a = ((d.rotate ?? 0) * Math.PI) / 180
+  return mapRings(rings, (p) => {
+    const ux = p.x - cx
+    const uy = p.y - cy
+    return { x: d.at[0] * em + ux * Math.cos(a) - uy * Math.sin(a), y: d.at[1] * em + ux * Math.sin(a) + uy * Math.cos(a) }
+  })
+}
+
+async function drawDecor(decor: Decor[], em: number, fallback: string): Promise<{ shapes: string[]; svg: string[]; points: Point[] }> {
   const shapes: string[] = []
   const svg: string[] = []
   const points: Point[] = []
@@ -168,13 +213,22 @@ function drawDecor(decor: Decor[], em: number, fallback: string): { shapes: stri
         shapes.push(`<circle cx="${n(c.x)}" cy="${n(c.y)}" r="${n(size / 2)}" fill="${color}" />`)
         svg.push(`<circle cx="${n(c.x)}" cy="${n(c.y)}" r="${n(size / 2)}" fill="${color}"/>`)
       }
+    } else if (d.type === 'text') {
+      const rings = await textRings(d, em)
+      points.push(...rings.flat())
+      const path = ringsToPath(rings)
+      shapes.push(`<path d="${path}" fill="${color}" stroke="none" />`)
+      svg.push(`<path d="${path}" fill="${color}"/>`)
     } else {
-      const pts = orbitPoints(d, em)
+      const pts =
+        d.type === 'orbit' ? orbitPoints(d, em) : d.points.map(([x, y]) => ({ x: x * em, y: y * em }))
       points.push(...pts)
       const path = `M${pts.map((p) => `${n(p.x)} ${n(p.y)}`).join('L')}`
       const w = n((d.width ?? 0.006) * em)
-      shapes.push(`<path d="${path}" fill="none" stroke="${color}" stroke-width="${w}" stroke-linecap="round" />`)
-      svg.push(`<path d="${path}" fill="none" stroke="${color}" stroke-width="${w}" stroke-linecap="round"/>`)
+      const cap = d.type === 'line' ? (d.cap ?? 'round') : 'round'
+      const dash = d.type === 'line' && d.dash ? ` stroke-dasharray="${n(d.dash[0] * em)} ${n(d.dash[1] * em)}"` : ''
+      shapes.push(`<path d="${path}" fill="none" stroke="${color}" stroke-width="${w}" stroke-linecap="${cap}"${dash} />`)
+      svg.push(`<path d="${path}" fill="none" stroke="${color}" stroke-width="${w}" stroke-linecap="${cap}"${dash}/>`)
     }
   }
   return { shapes, svg, points }
@@ -190,21 +244,28 @@ export function toDocuments(r: Recipe, c: Composition): { layer: string; svg: st
   const fill = r.fill ?? '#ffffff'
   const d = ringsToPath(mapRings(c.rings, (p) => ({ x: p.x + ox, y: p.y + oy })))
   const glow = r.glow ? ` glow="${esc(r.glow)}"` : ''
+  const extra = Object.entries(r.attrs ?? {})
+    .map(([k, v]) => ` ${k}="${esc(v)}"`)
+    .join('')
   const bg = r.background ?? '#16181d'
   const layer = layerDoc(w, h, bg.includes('gradient') ? '#000000' : bg, [
     `<rect x="0" y="0" width="${n(w)}" height="${n(h)}" fill="${esc(bg)}" />`,
     `<g transform="translate(${n(ox)},${n(oy)})">`,
     ...c.decorShapes,
     `</g>`,
-    `<path d="${d}" fill="${fill}" stroke="none"${glow} />`,
+    `<path d="${d}" fill="${esc(fill)}" stroke="none"${glow}${extra} />`,
   ])
+  const svgFill = fill.includes('gradient') ? '#ffffff' : fill
   const svg = [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${n(w)} ${n(h)}" width="${n(w)}" height="${n(h)}">`,
+    bg.includes('gradient') ? '' : `<rect width="100%" height="100%" fill="${bg}"/>`,
     `<g transform="translate(${n(ox)},${n(oy)})">`,
     ...c.decorSvg,
     `</g>`,
-    `<path d="${d}" fill="${fill}" fill-rule="nonzero"/>`,
+    `<path d="${d}" fill="${svgFill}" fill-rule="nonzero"/>`,
     `</svg>`,
-  ].join('\n')
+  ]
+    .filter(Boolean)
+    .join('\n')
   return { layer, svg }
 }
