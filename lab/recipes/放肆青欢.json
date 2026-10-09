@@ -1,0 +1,49 @@
+{
+  "lines": [
+    "放肆青欢"
+  ],
+  "font": "NotoSans",
+  "weight": 500,
+  "tracking": -0.02,
+  "steps": [
+    {
+      "op": "skeleton"
+    },
+    {
+      "op": "transform",
+      "select": {
+        "types": [
+          "横"
+        ]
+      },
+      "rotate": -7
+    },
+    {
+      "op": "extend",
+      "select": {
+        "types": [
+          "捺"
+        ]
+      },
+      "end": 0.12,
+      "curl": 0.85,
+      "curlRadius": 0.08,
+      "taper": 0.3
+    },
+    {
+      "op": "brush",
+      "width": 0.06,
+      "cap": "round"
+    }
+  ],
+  "post": [
+    {
+      "op": "warp",
+      "kind": "arc",
+      "amount": 0.14
+    }
+  ],
+  "fill": "linear-gradient(to right, #ff5f9e, #ffb347)",
+  "background": "#1d1238",
+  "glow": "18 #ff5f9e66"
+}

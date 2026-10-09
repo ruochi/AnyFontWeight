@@ -7,14 +7,17 @@
   "tracking": 0.32,
   "steps": [
     {
-      "op": "restroke",
+      "op": "skeleton"
+    },
+    {
+      "op": "brush",
       "width": 0.026,
       "cap": "butt",
       "join": "miter",
-      "smooth": 0.004,
       "dots": {
         "shape": "circle",
-        "scale": 2.4
+        "scale": 2.4,
+        "all": true
       }
     }
   ],

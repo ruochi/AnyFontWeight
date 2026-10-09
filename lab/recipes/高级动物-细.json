@@ -1,10 +1,26 @@
 {
-  "lines": ["高级", "动物"],
+  "lines": [
+    "高级",
+    "动物"
+  ],
   "font": "NotoSans",
   "weight": 400,
   "tracking": 0.02,
   "leading": 1.08,
-  "steps": [{ "op": "restroke", "width": 0.032, "cap": "round", "smooth": 0.006, "simplify": 0.003 }],
+  "steps": [
+    {
+      "op": "skeleton"
+    },
+    {
+      "op": "smooth",
+      "amount": 0.004
+    },
+    {
+      "op": "brush",
+      "width": 0.032,
+      "cap": "round"
+    }
+  ],
   "fill": "#f1f1ee",
   "background": "#1b1c1f"
 }
