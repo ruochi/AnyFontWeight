@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Point, Ring } from '../../src/types.js'
 import { fitRing } from './bezier.js'
+import { cpd } from './cpd.js'
 import type { HanziData } from './hanzi.js'
 import { applyStep, type Work } from './ops.js'
 import { ringsBounds } from './outline.js'
@@ -86,6 +87,15 @@ describe('骨架字形', () => {
     for (const p of v!.pts) expect(Math.abs(p.x - 200)).toBeLessThan(4)
     for (const p of h!.pts) expect(Math.abs(p.y - 200)).toBeLessThan(4)
     expect(Math.abs(v!.width[Math.floor(v!.width.length / 4)]! - 40)).toBeLessThan(6)
+  })
+
+  it('CPD：没人认领的目标线会把最近的源线拉过去，不会两条挤到一处', () => {
+    const vline = (x: number) => Array.from({ length: 20 }, (_, i) => ({ p: { x, y: 0.2 + (0.6 * i) / 19 }, t: { x: 0, y: 1 } }))
+    const top = Array.from({ length: 20 }, (_, i) => ({ p: { x: 0.1 + (0.8 * i) / 19, y: 0.2 }, t: { x: 1, y: 0 } }))
+    // 源里第二条竖在 0.45，离 0.3 比离 0.68 近；逐点找最近会把它也吸到 0.3
+    const field = cpd([...vline(0.3), ...vline(0.45), ...top], [...vline(0.3), ...vline(0.68), ...top], { beta: 0.5, lambda: 5 })
+    expect(field({ x: 0.3, y: 0.5 }).x).toBeCloseTo(0.3, 1)
+    expect(field({ x: 0.45, y: 0.5 }).x).toBeCloseTo(0.68, 1)
   })
 })
 

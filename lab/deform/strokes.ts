@@ -1,4 +1,5 @@
 import type { Point, Ring } from '../../src/types.js'
+import { cpd, type Oriented } from './cpd.js'
 import type { HanziData } from './hanzi.js'
 import { ringsBounds, simplifyLine } from './outline.js'
 import { classify, gaussianSmooth, polyLength, type Skeleton, type StrokeType } from './skeleton.js'
@@ -209,27 +210,44 @@ export function hybrid(data: HanziData, rings: Ring[], sk: Skeleton, em: number)
     e.pts.forEach((p, i) => samples.push({ p, t: ts[i]!, r: e.r[i]! }))
   }
   const inside = inkTest(rings)
+  const match = (p: Point, t: Point, R: number, cosMin: number) => {
+    let best: (typeof samples)[number] | null = null
+    let bd = R
+    for (const q of samples) {
+      const d = dist(q.p, p)
+      if (d >= bd || Math.abs(q.t.x * t.x + q.t.y * t.y) < cosMin) continue
+      bd = d
+      best = q
+    }
+    return best
+  }
+  refineFrame(base.strokes, match, em)
+  warpToSkeleton(base.strokes, sk, em, 0.5, 5)
   const strokes = base.strokes.map((s) => {
     const short = polyLength(s.pts) < em * 0.15
     const cosMin = Math.cos(((short ? 55 : 35) * Math.PI) / 180)
     const ts = tangents(s.pts, 3)
-    const match = (p: Point, t: Point, R: number) => {
-      let best: (typeof samples)[number] | null = null
-      let bd = R
-      for (const q of samples) {
-        const d = dist(q.p, p)
-        if (d >= bd || Math.abs(q.t.x * t.x + q.t.y * t.y) < cosMin) continue
-        bd = d
-        best = q
-      }
-      return best
+    const median = (xs: number[]) => xs.sort((a, b) => a - b)[Math.floor(xs.length / 2)]
+    const shiftOf = (idx: number[], R: number, around: Point) => {
+      const got = idx.flatMap((i) => {
+        const q = match({ x: s.pts[i]!.x + around.x, y: s.pts[i]!.y + around.y }, ts[i]!, R, cosMin)
+        return q ? [{ x: q.p.x - s.pts[i]!.x, y: q.p.y - s.pts[i]!.y }] : []
+      })
+      if (got.length < Math.max(2, idx.length * 0.3)) return null
+      return { x: median(got.map((d) => d.x))!, y: median(got.map((d) => d.y))! }
     }
-    // 先用整笔的中位位移把楷体结构挪到字体的位置，再在附近细找
-    const first = s.pts.map((p, i) => match(p, ts[i]!, em * 0.09))
-    const dxs = first.flatMap((q, i) => (q ? [q.p.x - s.pts[i]!.x] : [])).sort((a, b) => a - b)
-    const dys = first.flatMap((q, i) => (q ? [q.p.y - s.pts[i]!.y] : [])).sort((a, b) => a - b)
-    const shift = { x: dxs[Math.floor(dxs.length / 2)] ?? 0, y: dys[Math.floor(dys.length / 2)] ?? 0 }
-    let second = s.pts.map((p, i) => match({ x: p.x + shift.x, y: p.y + shift.y }, ts[i]!, em * 0.05))
+    // 先用整笔的中位位移挪到字体的位置；折笔再按转角分段各找各的位移，楷体和黑体的框宽不一样时竖段才吸得上
+    const all = s.pts.map((_, i) => i)
+    const shift = shiftOf(all, em * 0.09, { x: 0, y: 0 }) ?? { x: 0, y: 0 }
+    const segShift = all.map(() => shift)
+    for (const seg of cornerSegments(s.pts, em)) {
+      if (seg.length < 4) continue
+      const own = shiftOf(seg, em * 0.08, shift)
+      if (own) for (const i of seg) segShift[i] = own
+    }
+    const smoothShift = gaussianSmooth(segShift, 3)
+    const first = s.pts.map((p, i) => match(p, ts[i]!, em * 0.09, cosMin))
+    let second = s.pts.map((p, i) => match({ x: p.x + smoothShift[i]!.x, y: p.y + smoothShift[i]!.y }, ts[i]!, em * 0.05, cosMin))
     const rate = (xs: unknown[]) => xs.filter(Boolean).length / xs.length
     if (rate(second) < 0.4 && rate(first) > rate(second)) second = first
     // 两头吸不上的短短一截多半是楷体的入笔、出锋，字体里没有，去掉；长的保留按插值移动
@@ -276,6 +294,130 @@ export function hybrid(data: HanziData, rings: Ring[], sk: Skeleton, em: number)
     s.type = typeOf(s.pts, em)
   }
   return { source: 'hybrid', strokes }
+}
+
+type Matcher = (p: Point, t: Point, R: number, cosMin: number) => { p: Point; t: Point } | null
+
+/**
+ * 包围盒对齐之后，楷体和字体的内部比例仍不同（比如「可」的口、「尺」的框）。
+ * 用点到线的 ICP 再求一次 x、y 各自的缩放和平移：只沿匹配点处中心线的法向算误差，
+ * 横画只约束 y、竖画只约束 x，不会被沿线滑动的匹配拖住。
+ */
+function refineFrame(strokes: SStroke[], match: Matcher, em: number) {
+  const pts = strokes.flatMap((s) => {
+    const ts = tangents(s.pts, 3)
+    return s.pts.flatMap((p, i) => (i % 2 ? [] : [{ p, t: ts[i]! }]))
+  })
+  if (pts.length < 12) return
+  const c = { x: pts.reduce((a, q) => a + q.p.x, 0) / pts.length, y: pts.reduce((a, q) => a + q.p.y, 0) / pts.length }
+  let [sx, tx, sy, ty] = [1, 0, 1, 0]
+  const cos = Math.cos((35 * Math.PI) / 180)
+  for (let it = 0; it < 8; it++) {
+    const rows: Array<{ a: number[]; b: number; r: number }> = []
+    for (const { p, t } of pts) {
+      const u = p.x - c.x
+      const w = p.y - c.y
+      const at = { x: c.x + sx * u + tx, y: c.y + sy * w + ty }
+      const q = match(at, t, em * 0.1, cos)
+      if (!q) continue
+      const nx = -q.t.y
+      const ny = q.t.x
+      rows.push({ a: [nx * u, nx, ny * w, ny], b: nx * (q.p.x - c.x) + ny * (q.p.y - c.y), r: Math.abs(nx * (at.x - q.p.x) + ny * (at.y - q.p.y)) })
+    }
+    if (rows.length < 12) break
+    rows.sort((a, b) => a.r - b.r)
+    const keep = rows.slice(0, Math.ceil(rows.length * 0.8))
+    const M = [0, 1, 2, 3].map(() => [0, 0, 0, 0])
+    const v = [0, 0, 0, 0]
+    for (const { a, b } of keep)
+      for (let i = 0; i < 4; i++) {
+        v[i]! += a[i]! * b
+        for (let j = 0; j < 4; j++) M[i]![j]! += a[i]! * a[j]!
+      }
+    // 弱正则：缩放向 1、平移向 0 靠，只有一个方向有约束时不会乱跑
+    const ls = keep.length * (em * 0.05) ** 2
+    const lt = keep.length * 0.05
+    M[0]![0]! += ls
+    v[0]! += ls
+    M[2]![2]! += ls
+    v[2]! += ls
+    M[1]![1]! += lt
+    M[3]![3]! += lt
+    const sol = solve4(M, v)
+    if (!sol) break
+    sx = Math.min(1.25, Math.max(0.8, sol[0]!))
+    tx = sol[1]!
+    sy = Math.min(1.25, Math.max(0.8, sol[2]!))
+    ty = sol[3]!
+  }
+  const k = Math.sqrt(sx * sy)
+  for (const s of strokes) {
+    s.pts = s.pts.map((p) => ({ x: c.x + sx * (p.x - c.x) + tx, y: c.y + sy * (p.y - c.y) + ty }))
+    s.width = s.width.map((w) => w * k)
+  }
+}
+
+/** 用 CPD 把楷体中心线整体拉到字体骨架上；坐标先除以 em，参数都按 em 算。 */
+function warpToSkeleton(strokes: SStroke[], sk: Skeleton, em: number, beta: number, lambda: number) {
+  const spacing = em * 0.03
+  const pick = (pts: Point[]) => {
+    const ts = tangents(pts, 3)
+    const out: Oriented[] = []
+    let acc = spacing
+    for (let i = 0; i < pts.length; i++) {
+      if (i > 0) acc += dist(pts[i]!, pts[i - 1]!)
+      if (acc < spacing) continue
+      acc = 0
+      out.push({ p: { x: pts[i]!.x / em, y: pts[i]!.y / em }, t: ts[i]! })
+    }
+    return out
+  }
+  const ys = strokes.flatMap((s) => pick(s.pts))
+  const xs = sk.edges.flatMap((e) => pick(e.pts))
+  const field = cpd(ys, xs, { beta, lambda })
+  for (const s of strokes) s.pts = s.pts.map((p) => {
+    const q = field({ x: p.x / em, y: p.y / em })
+    return { x: q.x * em, y: q.y * em }
+  })
+}
+
+function solve4(M: number[][], v: number[]): number[] | null {
+  const A = M.map((row, i) => [...row, v[i]!])
+  for (let col = 0; col < 4; col++) {
+    let piv = col
+    for (let r = col + 1; r < 4; r++) if (Math.abs(A[r]![col]!) > Math.abs(A[piv]![col]!)) piv = r
+    if (Math.abs(A[piv]![col]!) < 1e-9) return null
+    ;[A[col], A[piv]] = [A[piv]!, A[col]!]
+    for (let r = 0; r < 4; r++) {
+      if (r === col) continue
+      const f = A[r]![col]! / A[col]![col]!
+      for (let j = col; j < 5; j++) A[r]![j]! -= f * A[col]![j]!
+    }
+  }
+  return A.map((row, i) => row[4]! / row[i]!)
+}
+
+/** 按 45° 以上的转角把一笔切成几段，返回每段的点序号。 */
+function cornerSegments(pts: Point[], em: number): number[][] {
+  const simple = simplifyLine(pts, em * 0.015)
+  const cuts: number[] = []
+  for (let k = 1; k < simple.length - 1; k++) {
+    const a = simple[k - 1]!
+    const b = simple[k]!
+    const c = simple[k + 1]!
+    const t1 = Math.atan2(b.y - a.y, b.x - a.x)
+    const t2 = Math.atan2(c.y - b.y, c.x - b.x)
+    let d = Math.abs(t2 - t1)
+    if (d > Math.PI) d = Math.PI * 2 - d
+    if (d < Math.PI / 4) continue
+    let best = 0
+    for (let i = 1; i < pts.length; i++) if (dist(pts[i]!, b) < dist(pts[best]!, b)) best = i
+    cuts.push(best)
+  }
+  const bounds = [0, ...cuts.sort((x, y) => x - y), pts.length]
+  const segs: number[][] = []
+  for (let i = 1; i < bounds.length; i++) segs.push(Array.from({ length: bounds[i]! - bounds[i - 1]! }, (_, k) => bounds[i - 1]! + k))
+  return segs.filter((s) => s.length)
 }
 
 /** 接在别的笔画上的一端：顺着走势伸到那一笔的中心线为止。 */
