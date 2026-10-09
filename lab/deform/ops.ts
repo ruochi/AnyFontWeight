@@ -1,10 +1,24 @@
 import type { Point, Ring } from '../../src/types.js'
 import { circle, difference, intersect, offset, roundCorners, strokeLines, sweep, translate, union, type Cap, type Join } from './bool.js'
 import { applyContrast } from './contrast.js'
-import { ringsBounds, simplifyLine, simplifyRing } from './outline.js'
+import { ringsBounds, simplifyLine, simplifyRing, snapLine } from './outline.js'
 import { shape, type ShapeName } from './shapes.js'
 import { buildSkeleton, gaussianSmooth, type Skeleton, type StrokeType } from './skeleton.js'
 import { spliceContour, swashOutline, type SwashParams } from './swash.js'
+import type { HanziData } from './hanzi.js'
+import {
+  brush,
+  connectStrokes,
+  extendStrokes,
+  jitterStrokes,
+  selectStrokes,
+  smoothStrokes,
+  snapStrokes,
+  transformStrokes,
+  type BrushParams,
+  type StrokeFilter,
+} from './skelops.js'
+import { fromHanzi, fromSkeleton, hybrid, resampleW, type StrokeGlyph, type StrokeSource } from './strokes.js'
 import { analyzeGlyph, compass, type GlyphAnalysis, type Terminal } from './terminals.js'
 
 /**
@@ -35,6 +49,21 @@ export type StepBody =
   | { op: 'slice'; angle: number; gap: number; at?: number | number[]; shift?: number }
   /** 几何化：简化轮廓，再把边的方向吸附到 `snap` 度的整数倍 */
   | { op: 'geometrize'; tolerance: number; snap?: number }
+  /** 整体弯成拱形（`arc`，正数中间向上拱）或波浪（`wave`，`period` 是波长） */
+  | { op: 'warp'; kind: 'arc' | 'wave'; amount: number; period?: number }
+  /**
+   * 以下是骨架层的操作。第一次用到时把字转成骨架字形，`brush` 再画回轮廓。
+   * 没写 `brush` 就按字体原来的笔宽画回去。
+   */
+  | { op: 'skeleton'; source?: StrokeSource }
+  | ({ op: 'transform'; select?: StrokeFilter } & Parameters<typeof transformStrokes>[1])
+  | ({ op: 'extend'; select?: StrokeFilter } & Parameters<typeof extendStrokes>[1])
+  | { op: 'snap'; angle: number; tolerance?: number; select?: StrokeFilter }
+  | { op: 'smooth'; amount: number; select?: StrokeFilter }
+  | { op: 'jitter'; amount: number; wavelength?: number; seed?: number; select?: StrokeFilter }
+  /** 按笔顺连笔；`across` 时把每个字的末笔接到下一个字的首笔，要写在 `post` 里 */
+  | { op: 'connect'; maxGap?: number; tension?: number; across?: boolean; width?: number; minDot?: number }
+  | ({ op: 'brush' } & BrushParams)
 
 export type RestrokeParams = {
   width: number
@@ -83,9 +112,39 @@ export type Work = {
   index: number
   char: string
   cache: { analysis?: GlyphAnalysis; skeleton?: Skeleton }
+  /** 骨架层的状态。有它时 `rings` 只是参照轮廓 */
+  strokes?: StrokeGlyph
+  /** 画回轮廓时要并进去的、不在骨架里的墨 */
+  keep?: Ring[]
 }
 
-export type Context = { chars: string[] }
+export type Context = { chars: string[]; hanzi?: Map<string, HanziData | null> }
+
+export const STROKE_OPS = new Set(['skeleton', 'transform', 'extend', 'snap', 'smooth', 'jitter', 'connect', 'brush'])
+
+/** 要不要预先下载逐笔数据 */
+export function needsHanzi(steps: Step[]): boolean {
+  return steps.some((s) => STROKE_OPS.has(s.op) && !(s.op === 'skeleton' && s.source === 'auto'))
+}
+
+export function strokesOf(w: Work, ctx: Context, source: StrokeSource = 'hybrid'): StrokeGlyph {
+  if (w.strokes) return w.strokes
+  const data = source === 'auto' ? null : (ctx.hanzi?.get(w.char) ?? null)
+  const sg = !data ? fromSkeleton(skeletonOf(w), w.em) : source === 'hanzi' ? fromHanzi(data, w.rings, w.em) : hybrid(data, w.rings, skeletonOf(w), w.em)
+  for (const s of sg.strokes) s.glyph = w.index
+  w.strokes = sg
+  return sg
+}
+
+/** 骨架层画回轮廓。 */
+export function ensureRings(w: Work, params: BrushParams = { width: 'source' }) {
+  if (!w.strokes) return
+  const out = brush(w.strokes, params, w.em)
+  const keep = w.keep ?? []
+  w.strokes = undefined
+  w.keep = undefined
+  setRings(w, keep.length ? union(keep, out) : out)
+}
 
 export function setRings(w: Work, rings: Ring[]) {
   w.rings = rings
@@ -116,6 +175,9 @@ export function runSteps(w: Work, steps: Step[], ctx: Context) {
 
 export function applyStep(w: Work, step: Step, ctx: Context) {
   const em = w.em
+  if (STROKE_OPS.has(step.op)) return strokeStep(w, step, ctx)
+  if (step.op === 'warp') return warpStep(w, step)
+  ensureRings(w)
   switch (step.op) {
     case 'swash':
       return swashStep(w, step, ctx)
@@ -146,6 +208,63 @@ export function applyStep(w: Work, step: Step, ctx: Context) {
     case 'geometrize':
       return setRings(w, union(w.rings.map((r) => geometrizeRing(r, step.tolerance * em, step.snap))))
   }
+}
+
+function strokeStep(w: Work, step: Step, ctx: Context) {
+  const em = w.em
+  const sg = strokesOf(w, ctx, step.op === 'skeleton' ? step.source : undefined)
+  const pick = (f?: StrokeFilter) => selectStrokes(sg, f, w.box)
+  switch (step.op) {
+    case 'transform':
+      return transformStrokes(pick(step.select), step, em)
+    case 'extend':
+      return extendStrokes(pick(step.select), step, em)
+    case 'snap':
+      return snapStrokes(pick(step.select), step.angle, step.tolerance ?? 0.01, em)
+    case 'smooth':
+      return smoothStrokes(pick(step.select), step.amount, em)
+    case 'jitter':
+      return jitterStrokes(pick(step.select), step.amount, step.wavelength ?? 0.2, step.seed ?? 1, em)
+    case 'connect':
+      return connectStrokes(sg, step, em)
+    case 'brush': {
+      const { op: _op, glyphs: _g, ...params } = step
+      return ensureRings(w, params)
+    }
+  }
+}
+
+function warpStep(w: Work, step: Extract<Step, { op: 'warp' }>) {
+  const em = w.em
+  const { x, w: bw } = w.box
+  const cx = x + bw / 2
+  const map = (p: Point): Point => {
+    if (step.kind === 'arc') {
+      const t = (p.x - cx) / (bw / 2 || 1)
+      return { x: p.x, y: p.y - step.amount * em * (1 - t * t) }
+    }
+    return { x: p.x, y: p.y + step.amount * em * Math.sin((2 * Math.PI * (p.x - x)) / ((step.period ?? 2) * em)) }
+  }
+  if (w.strokes) {
+    for (const s of w.strokes.strokes) s.pts = s.pts.map(map)
+    if (w.keep) w.keep = w.keep.map((r) => densify(r, em * 0.01).map(map))
+    return
+  }
+  setRings(
+    w,
+    w.rings.map((r) => densify(r, em * 0.01).map(map)),
+  )
+}
+
+function densify(r: Ring, step: number): Ring {
+  const out: Ring = []
+  for (let i = 0; i < r.length; i++) {
+    const a = r[i]!
+    const b = r[(i + 1) % r.length]!
+    const n = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / step))
+    for (let k = 0; k < n; k++) out.push({ x: a.x + ((b.x - a.x) * k) / n, y: a.y + ((b.y - a.y) * k) / n })
+  }
+  return out
 }
 
 function terminalHit(t: Terminal, k: number, f: TerminalFilter | undefined, w: Work): boolean {
@@ -378,50 +497,6 @@ function straightTip(pts: Point[], reach: number, atStart: boolean): Point[] {
   if (l < 1e-6) return pts
   const out = [...p.slice(0, i + 1), { x: q.x + ((q.x - r.x) / l) * acc, y: q.y + ((q.y - r.y) / l) * acc }]
   return atStart ? out.reverse() : out
-}
-
-/** 每段绕自己的中点转到最近的 snap 整数倍方向，再求相邻两段的交点当新顶点。 */
-function snapLine(pts: Point[], snap: number, closed: boolean): Point[] {
-  const step = (snap * Math.PI) / 180
-  type Seg = { m: Point; d: Point; len: number }
-  const segs: Seg[] = []
-  const n = pts.length
-  for (let i = 0; i < (closed ? n : n - 1); i++) {
-    const a = pts[i]!
-    const b = pts[(i + 1) % n]!
-    const len = Math.hypot(b.x - a.x, b.y - a.y)
-    if (len < 1e-6) continue
-    const ang = Math.round(Math.atan2(b.y - a.y, b.x - a.x) / step) * step
-    const d = { x: Math.cos(ang), y: Math.sin(ang) }
-    const m = { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }
-    const prev = segs[segs.length - 1]
-    if (prev && Math.abs(prev.d.x * d.y - prev.d.y * d.x) < 1e-6 && prev.d.x * d.x + prev.d.y * d.y > 0) {
-      const t = prev.len + len
-      prev.m = { x: (prev.m.x * prev.len + m.x * len) / t, y: (prev.m.y * prev.len + m.y * len) / t }
-      prev.len = t
-      continue
-    }
-    segs.push({ m, d, len })
-  }
-  if (segs.length === 0) return pts
-  const meet = (s: Seg, t: Seg): Point => {
-    const den = s.d.x * t.d.y - s.d.y * t.d.x
-    if (Math.abs(den) < 1e-9) return { x: (s.m.x + t.m.x) / 2, y: (s.m.y + t.m.y) / 2 }
-    const u = ((t.m.x - s.m.x) * t.d.y - (t.m.y - s.m.y) * t.d.x) / den
-    const p = { x: s.m.x + s.d.x * u, y: s.m.y + s.d.y * u }
-    const far = Math.max(s.len, t.len) * 1.5
-    if (Math.hypot(p.x - s.m.x, p.y - s.m.y) > far) return { x: (s.m.x + t.m.x) / 2, y: (s.m.y + t.m.y) / 2 }
-    return p
-  }
-  const proj = (s: Seg, p: Point): Point => {
-    const u = (p.x - s.m.x) * s.d.x + (p.y - s.m.y) * s.d.y
-    return { x: s.m.x + s.d.x * u, y: s.m.y + s.d.y * u }
-  }
-  if (closed) return segs.map((s, i) => meet(segs[(i - 1 + segs.length) % segs.length]!, s))
-  const out = [proj(segs[0]!, pts[0]!)]
-  for (let i = 1; i < segs.length; i++) out.push(meet(segs[i - 1]!, segs[i]!))
-  out.push(proj(segs[segs.length - 1]!, pts[n - 1]!))
-  return out
 }
 
 function geometrizeRing(r: Ring, tol: number, snap?: number): Ring {

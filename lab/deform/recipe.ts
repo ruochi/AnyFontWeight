@@ -1,9 +1,12 @@
 import { glyph } from 'flexlayer'
 import type { Point, Ring } from '../../src/types.js'
+import { ringsToCurvePath } from './bezier.js'
 import { union } from './bool.js'
 import { esc, layerDoc, n } from './draw.js'
 import { loadGlyphs } from './glyphs.js'
-import { runSteps, type Context, type Step, type Work } from './ops.js'
+import { loadHanzi, type HanziData } from './hanzi.js'
+import { ensureRings, needsHanzi, runSteps, STROKE_OPS, type Context, type Step, type Work } from './ops.js'
+import type { SStroke } from './strokes.js'
 import { mapRings, pathToRings, ringsBounds, ringsToPath, simplifyRing } from './outline.js'
 import type { SwashParams } from './swash.js'
 
@@ -41,6 +44,8 @@ export type Recipe = {
   decor?: Decor[]
   /** 画面四周留白 */
   padding?: number
+  /** 输出时把折线拟合成贝塞尔曲线，默认开 */
+  curves?: boolean
 }
 
 type Color = { color?: string }
@@ -84,9 +89,11 @@ export function recipeSteps(r: Recipe): Step[] {
   return [...(r.swashes?.length ? [{ op: 'swash' as const, items: r.swashes }] : []), ...(r.steps ?? [])]
 }
 
-export async function glyphWorks(r: Recipe): Promise<{ works: Work[]; ctx: Context; baseline: number; advances: number[] }> {
+export async function glyphWorks(r: Recipe, opts2: { hanzi?: boolean } = {}): Promise<{ works: Work[]; ctx: Context; baseline: number; advances: number[] }> {
   const opts = sourceOptions(r)
   const glyphs = await loadGlyphs(recipeText(r), opts)
+  const hanzi = new Map<string, HanziData | null>()
+  if (opts2.hanzi || needsHanzi([...recipeSteps(r), ...(r.post ?? [])])) for (const g of glyphs) hanzi.set(g.char, await loadHanzi(g.char))
   const works: Work[] = glyphs.map((g) => ({
     rings: g.rings,
     box: { x: 0, y: 0, w: g.advance, h: g.height },
@@ -95,7 +102,7 @@ export async function glyphWorks(r: Recipe): Promise<{ works: Work[]; ctx: Conte
     char: g.char,
     cache: { analysis: g.analysis },
   }))
-  return { works, ctx: { chars: glyphs.map((g) => g.char) }, baseline: glyphs[0]?.baseline ?? opts.size, advances: glyphs.map((g) => g.advance) }
+  return { works, ctx: { chars: glyphs.map((g) => g.char), hanzi }, baseline: glyphs[0]?.baseline ?? opts.size, advances: glyphs.map((g) => g.advance) }
 }
 
 export type Composition = { rings: Ring[]; decorShapes: string[]; decorSvg: string[]; bounds: { minX: number; minY: number; maxX: number; maxY: number } }
@@ -104,11 +111,17 @@ export async function compose(r: Recipe): Promise<Composition> {
   const em = sourceOptions(r).size
   const { works, ctx, baseline, advances } = await glyphWorks(r)
   const steps = recipeSteps(r)
-  for (const w of works) runSteps(w, steps, ctx)
+  const carry = (r.post ?? []).some((s) => STROKE_OPS.has(s.op))
+  for (const w of works) {
+    runSteps(w, steps, ctx)
+    if (!carry) ensureRings(w)
+  }
   const tracking = (r.tracking ?? 0) * em
   const leading = (r.leading ?? 1) * em
   const skew = Math.tan(((r.skew ?? 0) * Math.PI) / 180)
   let out: Ring[] = []
+  const ref: Ring[] = []
+  const strokes: SStroke[] = []
   let gi = 0
   r.lines.forEach((line, li) => {
     let x = (r.indent?.[li] ?? 0) * em
@@ -122,22 +135,36 @@ export async function compose(r: Recipe): Promise<Composition> {
       const rot = ((tweak.rotate ?? 0) * Math.PI) / 180
       const ox = x + (tweak.dx ?? 0) * em
       const oy = y + (tweak.dy ?? 0) * em
-      const placed = mapRings(w.rings, (p) => {
+      const place = (p: Point): Point => {
         const dx = (p.x - cx) * sc
         const dy = (p.y - cy) * sc
         const px = ox + cx + dx * Math.cos(rot) - dy * Math.sin(rot)
         const py = oy + cy + dx * Math.sin(rot) + dy * Math.cos(rot)
         return { x: px + (baseline - py) * skew, y: py }
-      })
-      out.push(...placed.map((ring) => simplifyRing(ring, em * 0.0006)))
+      }
+      const placed = mapRings(w.rings, place).map((ring) => simplifyRing(ring, em * 0.0006))
+      if (w.strokes) {
+        ref.push(...placed)
+        for (const s of w.strokes.strokes) strokes.push({ ...s, pts: s.pts.map(place), width: s.width.map((v) => v * sc), glyph: w.index })
+      } else out.push(...placed)
       x += advances[gi]! + tracking
       gi++
     }
   })
   if (r.post?.length) {
-    const b = ringsBounds(out)
-    const whole: Work = { rings: union(out), box: { x: b.minX, y: b.minY, w: b.maxX - b.minX, h: b.maxY - b.minY }, em, index: -1, char: '', cache: {} }
+    const b = ringsBounds([...out, ...ref])
+    const whole: Work = {
+      rings: strokes.length ? [...out, ...ref] : union(out),
+      box: { x: b.minX, y: b.minY, w: b.maxX - b.minX, h: b.maxY - b.minY },
+      em,
+      index: -1,
+      char: '',
+      cache: {},
+      strokes: strokes.length ? { source: 'hybrid', strokes } : undefined,
+      keep: strokes.length ? out : undefined,
+    }
     runSteps(whole, r.post, ctx)
+    ensureRings(whole)
     out = whole.rings
   }
   const { shapes, svg, points } = await drawDecor(r.decor ?? [], em, r.fill ?? '#ffffff')
@@ -242,7 +269,8 @@ export function toDocuments(r: Recipe, c: Composition): { layer: string; svg: st
   const ox = pad - c.bounds.minX
   const oy = pad - c.bounds.minY
   const fill = r.fill ?? '#ffffff'
-  const d = ringsToPath(mapRings(c.rings, (p) => ({ x: p.x + ox, y: p.y + oy })))
+  const moved = mapRings(c.rings, (p) => ({ x: p.x + ox, y: p.y + oy }))
+  const d = r.curves === false ? ringsToPath(moved) : ringsToCurvePath(moved, em * 0.0012)
   const glow = r.glow ? ` glow="${esc(r.glow)}"` : ''
   const extra = Object.entries(r.attrs ?? {})
     .map(([k, v]) => ` ${k}="${esc(v)}"`)
