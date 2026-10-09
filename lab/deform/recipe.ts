@@ -105,14 +105,33 @@ export async function glyphWorks(r: Recipe, opts2: { hanzi?: boolean } = {}): Pr
   return { works, ctx: { chars: glyphs.map((g) => g.char), hanzi }, baseline: glyphs[0]?.baseline ?? opts.size, advances: glyphs.map((g) => g.advance) }
 }
 
-export type Composition = { rings: Ring[]; decorShapes: string[]; decorSvg: string[]; bounds: { minX: number; minY: number; maxX: number; maxY: number } }
+export type Bounds = { minX: number; minY: number; maxX: number; maxY: number }
 
-export async function compose(r: Recipe): Promise<Composition> {
+/** 审阅用：每个字排版后的原字轮廓、字身盒子，以及最后一次画回轮廓前的骨架字形（都在排版坐标里）。 */
+export type Trace = {
+  glyphs: Array<{
+    index: number
+    char: string
+    orig: Ring[]
+    box: Bounds
+    strokes: SStroke[]
+    affine: [Point, Point, Point]
+    /** 这个字自己的结果；有整段操作时字和字并在一起，没有这一项 */
+    rings?: Ring[]
+  }>
+}
+
+export type Composition = { rings: Ring[]; decorShapes: string[]; decorSvg: string[]; bounds: Bounds; trace?: Trace }
+
+export async function compose(r: Recipe, opts: { trace?: boolean } = {}): Promise<Composition> {
   const em = sourceOptions(r).size
   const { works, ctx, baseline, advances } = await glyphWorks(r)
   const steps = recipeSteps(r)
   const carry = (r.post ?? []).some((s) => STROKE_OPS.has(s.op))
+  const orig = works.map((w) => w.rings)
+  const trace: Trace | undefined = opts.trace ? { glyphs: [] } : undefined
   for (const w of works) {
+    if (trace) w.trace = []
     runSteps(w, steps, ctx)
     if (!carry) ensureRings(w)
   }
@@ -143,6 +162,19 @@ export async function compose(r: Recipe): Promise<Composition> {
         return { x: px + (baseline - py) * skew, y: py }
       }
       const placed = mapRings(w.rings, place).map((ring) => simplifyRing(ring, em * 0.0006))
+      if (trace) {
+        const corners = [place({ x: 0, y: 0 }), place({ x: w.box.w, y: 0 }), place({ x: 0, y: w.box.h }), place({ x: w.box.w, y: w.box.h })]
+        const last = w.trace?.[w.trace.length - 1]
+        trace.glyphs.push({
+          index: w.index,
+          char: w.char,
+          orig: mapRings(orig[gi]!, place),
+          box: ringsBounds([corners]),
+          affine: [place({ x: 0, y: 0 }), place({ x: 1, y: 0 }), place({ x: 0, y: 1 })],
+          rings: r.post?.length ? undefined : placed,
+          strokes: last ? last.strokes.map((s) => ({ ...s, pts: s.pts.map(place), width: s.width.map((v) => v * sc), glyph: w.index })) : [],
+        })
+      }
       if (w.strokes) {
         ref.push(...placed)
         for (const s of w.strokes.strokes) strokes.push({ ...s, pts: s.pts.map(place), width: s.width.map((v) => v * sc), glyph: w.index })
@@ -162,14 +194,17 @@ export async function compose(r: Recipe): Promise<Composition> {
       cache: {},
       strokes: strokes.length ? { source: 'hybrid', strokes } : undefined,
       keep: strokes.length ? out : undefined,
+      trace: trace ? [] : undefined,
     }
     runSteps(whole, r.post, ctx)
     ensureRings(whole)
     out = whole.rings
+    const last = whole.trace?.[whole.trace.length - 1]
+    if (trace && last) for (const g of trace.glyphs) g.strokes = last.strokes.filter((s) => s.glyph === g.index)
   }
   const { shapes, svg, points } = await drawDecor(r.decor ?? [], em, r.fill ?? '#ffffff')
   const b = ringsBounds([...out, points])
-  return { rings: out, decorShapes: shapes, decorSvg: svg, bounds: b }
+  return { rings: out, decorShapes: shapes, decorSvg: svg, bounds: b, trace }
 }
 
 function sparklePath(c: Point, size: number): string {

@@ -116,6 +116,8 @@ export type Work = {
   strokes?: StrokeGlyph
   /** 画回轮廓时要并进去的、不在骨架里的墨 */
   keep?: Ring[]
+  /** 审阅时记下每次画回轮廓前的骨架字形 */
+  trace?: StrokeGlyph[]
 }
 
 export type Context = { chars: string[]; hanzi?: Map<string, HanziData | null> }
@@ -139,6 +141,7 @@ export function strokesOf(w: Work, ctx: Context, source: StrokeSource = 'hybrid'
 /** 骨架层画回轮廓。 */
 export function ensureRings(w: Work, params: BrushParams = { width: 'source' }) {
   if (!w.strokes) return
+  w.trace?.push({ source: w.strokes.source, strokes: w.strokes.strokes.map((s) => ({ ...s, pts: s.pts.slice(), width: s.width.slice() })) })
   const out = brush(w.strokes, params, w.em)
   const keep = w.keep ?? []
   w.strokes = undefined
