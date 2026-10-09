@@ -23,6 +23,9 @@
   },
   "license": "MIT",
   "devDependencies": {
+    "@napi-rs/canvas": "^1.0.10",
+    "@types/clipper-lib": "^6.4.0",
+    "clipper-lib": "^6.4.2",
     "flexlayer": "github:ruochi/flexlayer",
     "tsx": "^4.23.15",
     "typescript": "~5.4.2",

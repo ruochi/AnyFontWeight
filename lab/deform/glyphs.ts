@@ -3,6 +3,7 @@ import { anyFontWeight } from '../../src/anyFontWeight.js'
 import type { Ring } from '../../src/types.js'
 import { applyContrast } from './contrast.js'
 import { pathToRings, removeSpikes } from './outline.js'
+import type { Skeleton } from './skeleton.js'
 import { analyzeGlyph, compass, groupRings, type GlyphAnalysis, type Terminal } from './terminals.js'
 
 export type SourceGlyph = {
@@ -44,6 +45,25 @@ export async function loadGlyphs(text: string, opts: SourceOptions): Promise<Sou
       analysis: analyzeGlyph(rings, opts.size),
     }
   })
+}
+
+/** 给模型读的笔画清单。`id` 是「字.s编号」，`from`、`to` 是相对字身盒子的位置。 */
+export function describeSkeleton(g: { index: number; char: string; advance: number; height: number }, sk: Skeleton, em: number) {
+  const r = (v: number) => Math.round(v * 1000) / 1000
+  const rel = (p: { x: number; y: number }) => [r(p.x / g.advance), r(p.y / g.height)]
+  return {
+    index: g.index,
+    char: g.char,
+    strokes: sk.strokes.map((s) => ({
+      id: `${g.char}.s${s.id + 1}`,
+      type: s.type,
+      length: r(s.length / em),
+      angle: Math.round(s.angle),
+      from: rel(s.pts[0]!),
+      to: rel(s.pts[s.pts.length - 1]!),
+    })),
+    dots: sk.components.filter((c) => c.dot).map((c) => rel(c.center)),
+  }
 }
 
 /** 给模型读的末端清单。长度单位都是 em，位置是相对字身盒子的 0–1。 */

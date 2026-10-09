@@ -153,6 +153,11 @@ export function simplifyRing(r: Ring, tol: number): Ring {
   return [...a.slice(0, -1), ...b.slice(0, -1)]
 }
 
+/** 开放折线的 Douglas–Peucker 简化，首尾保留。 */
+export function simplifyLine(pts: Point[], tol: number): Point[] {
+  return pts.length < 3 ? pts : dp(pts, tol)
+}
+
 function dp(pts: Point[], tol: number): Point[] {
   const keep = new Uint8Array(pts.length)
   keep[0] = 1
