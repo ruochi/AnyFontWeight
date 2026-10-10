@@ -10,10 +10,12 @@ import {
   brush,
   connectStrokes,
   extendStrokes,
+  filletStrokes,
   jitterStrokes,
   selectStrokes,
   smoothStrokes,
   snapStrokes,
+  straightenStrokes,
   transformStrokes,
   type BrushParams,
   type StrokeFilter,
@@ -60,6 +62,10 @@ export type StepBody =
   | ({ op: 'extend'; select?: StrokeFilter } & Parameters<typeof extendStrokes>[1])
   | { op: 'snap'; angle: number; tolerance?: number; select?: StrokeFilter }
   | { op: 'smooth'; amount: number; select?: StrokeFilter }
+  /** 规整：接近水平、竖直的直段拉成正横正竖 */
+  | { op: 'straighten'; within?: number; tolerance?: number; select?: StrokeFilter }
+  /** 圆转：折角换成圆弧 */
+  | { op: 'fillet'; radius: number; select?: StrokeFilter }
   | { op: 'jitter'; amount: number; wavelength?: number; seed?: number; select?: StrokeFilter }
   /** 按笔顺连笔；`across` 时把每个字的末笔接到下一个字的首笔，要写在 `post` 里 */
   | { op: 'connect'; maxGap?: number; tension?: number; across?: boolean; width?: number; minDot?: number }
@@ -127,7 +133,7 @@ export type Context = {
   source?: StrokeSource
 }
 
-export const STROKE_OPS = new Set(['skeleton', 'transform', 'extend', 'snap', 'smooth', 'jitter', 'connect', 'brush'])
+export const STROKE_OPS = new Set(['skeleton', 'transform', 'extend', 'snap', 'smooth', 'straighten', 'fillet', 'jitter', 'connect', 'brush'])
 
 /** 要不要预先下载逐笔数据 */
 export function needsHanzi(steps: Step[]): boolean {
@@ -232,6 +238,10 @@ function strokeStep(w: Work, step: Step, ctx: Context) {
       return snapStrokes(pick(step.select), step.angle, step.tolerance ?? 0.01, em)
     case 'smooth':
       return smoothStrokes(pick(step.select), step.amount, em)
+    case 'straighten':
+      return straightenStrokes(pick(step.select), step, em)
+    case 'fillet':
+      return filletStrokes(pick(step.select), step.radius, em)
     case 'jitter':
       return jitterStrokes(pick(step.select), step.amount, step.wavelength ?? 0.2, step.seed ?? 1, em)
     case 'connect':
