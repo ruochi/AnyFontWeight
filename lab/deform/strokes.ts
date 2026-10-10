@@ -180,12 +180,62 @@ function widthsFromOutline(pts: Point[], outline: Ring[]): number[] {
   })
 }
 
+/**
+ * 开源数据的中心线只有几个点。在 45° 以上的转角处断开，每段用向心 Catmull-Rom 样条穿过这些点，
+ * 折笔保持尖角，弯的笔画变顺。
+ */
+export function smoothMedian(pts: Point[], em: number): Point[] {
+  if (pts.length < 3) return pts.slice()
+  const cuts = [0]
+  for (let i = 1; i < pts.length - 1; i++) {
+    const a = pts[i - 1]!
+    const b = pts[i]!
+    const c = pts[i + 1]!
+    let d = Math.abs(Math.atan2(c.y - b.y, c.x - b.x) - Math.atan2(b.y - a.y, b.x - a.x))
+    if (d > Math.PI) d = Math.PI * 2 - d
+    if (d > Math.PI / 4) cuts.push(i)
+  }
+  cuts.push(pts.length - 1)
+  const out: Point[] = [pts[0]!]
+  const step = em * 0.004
+  for (let k = 1; k < cuts.length; k++) {
+    const piece = pts.slice(cuts[k - 1]!, cuts[k]! + 1)
+    for (let i = 0; i < piece.length - 1; i++) {
+      const p1 = piece[i]!
+      const p2 = piece[i + 1]!
+      const p0 = piece[i - 1] ?? { x: 2 * p1.x - p2.x, y: 2 * p1.y - p2.y }
+      const p3 = piece[i + 2] ?? { x: 2 * p2.x - p1.x, y: 2 * p2.y - p1.y }
+      const n = Math.max(1, Math.ceil(dist(p1, p2) / step))
+      for (let j = 1; j <= n; j++) out.push(catmullRom(p0, p1, p2, p3, j / n))
+    }
+  }
+  return out
+}
+
+function catmullRom(p0: Point, p1: Point, p2: Point, p3: Point, u: number): Point {
+  const knot = (a: Point, b: Point) => Math.max(Math.sqrt(dist(a, b)), 1e-6)
+  const t1 = knot(p0, p1)
+  const t2 = t1 + knot(p1, p2)
+  const t3 = t2 + knot(p2, p3)
+  const t = t1 + (t2 - t1) * u
+  const lerp = (a: Point, b: Point, ta: number, tb: number) => {
+    const w = (t - ta) / (tb - ta)
+    return { x: a.x + (b.x - a.x) * w, y: a.y + (b.y - a.y) * w }
+  }
+  const a1 = lerp(p0, p1, 0, t1)
+  const a2 = lerp(p1, p2, t1, t2)
+  const a3 = lerp(p2, p3, t2, t3)
+  const b1 = lerp(a1, a2, 0, t2)
+  const b2 = lerp(a2, a3, t1, t3)
+  return lerp(b1, b2, t1, t2)
+}
+
 /** 只用开源数据：结构是楷体的，按包围盒拉到字体的位置上。 */
 export function fromHanzi(data: HanziData, rings: Ring[], em: number): StrokeGlyph {
   const f = alignFrame(data, rings)
   const step = em * 0.008
   const strokes: SStroke[] = data.medians.map((m, i) => {
-    const pts = m.map(f.map)
+    const pts = smoothMedian(m.map(f.map), em)
     const outline = data.strokes[i]!.map((r) => r.map(f.map))
     const raw = resampleW(pts, pts.map(() => 0), step)
     const width = gaussianSmooth(

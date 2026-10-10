@@ -3,7 +3,7 @@ import type { Point, Ring } from '../../src/types.js'
 import { ringsToCurvePath } from './bezier.js'
 import { union } from './bool.js'
 import { esc, layerDoc, n } from './draw.js'
-import { loadGlyphs } from './glyphs.js'
+import { HANZI_FONT, loadGlyphs } from './glyphs.js'
 import { loadHanzi, type HanziData } from './hanzi.js'
 import { ensureRings, needsHanzi, runSteps, STROKE_OPS, type Context, type Step, type Work } from './ops.js'
 import type { SStroke } from './strokes.js'
@@ -93,7 +93,8 @@ export async function glyphWorks(r: Recipe, opts2: { hanzi?: boolean } = {}): Pr
   const opts = sourceOptions(r)
   const glyphs = await loadGlyphs(recipeText(r), opts)
   const hanzi = new Map<string, HanziData | null>()
-  if (opts2.hanzi || needsHanzi([...recipeSteps(r), ...(r.post ?? [])])) for (const g of glyphs) hanzi.set(g.char, await loadHanzi(g.char))
+  const fromData = opts.font === HANZI_FONT
+  if (fromData || opts2.hanzi || needsHanzi([...recipeSteps(r), ...(r.post ?? [])])) for (const g of glyphs) hanzi.set(g.char, await loadHanzi(g.char))
   const works: Work[] = glyphs.map((g) => ({
     rings: g.rings,
     box: { x: 0, y: 0, w: g.advance, h: g.height },
@@ -102,7 +103,12 @@ export async function glyphWorks(r: Recipe, opts2: { hanzi?: boolean } = {}): Pr
     char: g.char,
     cache: { analysis: g.analysis },
   }))
-  return { works, ctx: { chars: glyphs.map((g) => g.char), hanzi }, baseline: glyphs[0]?.baseline ?? opts.size, advances: glyphs.map((g) => g.advance) }
+  return {
+    works,
+    ctx: { chars: glyphs.map((g) => g.char), hanzi, source: fromData ? 'hanzi' : undefined },
+    baseline: glyphs[0]?.baseline ?? opts.size,
+    advances: glyphs.map((g) => g.advance),
+  }
 }
 
 export type Bounds = { minX: number; minY: number; maxX: number; maxY: number }

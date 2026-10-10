@@ -5,6 +5,7 @@ import { basename, dirname, join } from 'node:path'
 import type { Point, Ring } from '../../src/types.js'
 import { difference, intersect, offset, union } from './bool.js'
 import { esc, label, layerDoc, n, toPng } from './draw.js'
+import { HANZI_FONT } from './glyphs.js'
 import { STROKE_OPS, strokesOf, type Step } from './ops.js'
 import { mapRings, pathToRings, ringsBounds, ringsToPath } from './outline.js'
 import { compose, glyphWorks, recipeSteps, toDocuments, type Bounds, type Recipe, type Trace } from './recipe.js'
@@ -160,7 +161,7 @@ function sourceOf(r: Recipe): StrokeSource | null {
   const all: Step[] = [...recipeSteps(r), ...(r.post ?? [])]
   if (!all.some((s) => STROKE_OPS.has(s.op))) return null
   const sk = all.find((s) => s.op === 'skeleton') as { source?: StrokeSource } | undefined
-  return sk?.source ?? 'hybrid'
+  return sk?.source ?? (r.font === HANZI_FONT ? 'hanzi' : 'hybrid')
 }
 
 type Affine = (p: Point) => Point

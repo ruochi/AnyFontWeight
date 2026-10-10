@@ -1,7 +1,9 @@
 import { glyph } from 'flexlayer'
 import { anyFontWeight } from '../../src/anyFontWeight.js'
 import type { Ring } from '../../src/types.js'
+import { union } from './bool.js'
 import { applyContrast } from './contrast.js'
+import { loadHanzi } from './hanzi.js'
 import { pathToRings, removeSpikes } from './outline.js'
 import type { Skeleton } from './skeleton.js'
 import { analyzeGlyph, compass, groupRings, type GlyphAnalysis, type Terminal } from './terminals.js'
@@ -26,7 +28,33 @@ export type SourceOptions = {
   contrast?: { vertical: number; horizontal: number }
 }
 
+/** `font` 写这个名字时不读字体，字形直接用 Make Me a Hanzi 的逐笔轮廓。 */
+export const HANZI_FONT = 'hanzi'
+
+/**
+ * 逐笔数据的方框是 1024，翻转后 y 从 0 到 1024，基线在 900。字宽、字身高都取一个 em。
+ * 数据里没有的字（标点、拉丁字母）退回 NotoSans。
+ */
+async function hanziGlyphs(text: string, opts: SourceOptions): Promise<SourceGlyph[]> {
+  const k = opts.size / 1024
+  const chars = Array.from(text)
+  const out: SourceGlyph[] = []
+  for (const [index, char] of chars.entries()) {
+    const data = await loadHanzi(char)
+    if (data) {
+      const rings = union(data.strokes.flat().map((r) => r.map((p) => ({ x: p.x * k, y: p.y * k }))))
+      out.push({ index, char, advance: opts.size, height: opts.size, baseline: 900 * k, rings, analysis: analyzeGlyph(rings, opts.size) })
+      continue
+    }
+    const [g] = await glyph(char, { font: 'NotoSans', size: opts.size, weight: opts.weight ?? 400 })
+    const rings = g ? pathToRings(g.d, opts.size * 0.0008).map((r) => r.map((p) => ({ x: p.x, y: p.y + (900 * k - g.baseline) }))) : []
+    out.push({ index, char, advance: g?.width ?? opts.size * 0.5, height: opts.size, baseline: 900 * k, rings, analysis: analyzeGlyph(rings, opts.size) })
+  }
+  return out
+}
+
 export async function loadGlyphs(text: string, opts: SourceOptions): Promise<SourceGlyph[]> {
+  if (opts.font === HANZI_FONT) return hanziGlyphs(text, opts)
   const gs = await glyph(text, { font: opts.font, size: opts.size, weight: opts.weight })
   return gs.map((g, index) => {
     let rings = pathToRings(g.d, opts.size * 0.0008)

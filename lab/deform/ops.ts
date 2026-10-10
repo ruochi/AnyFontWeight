@@ -120,7 +120,12 @@ export type Work = {
   trace?: StrokeGlyph[]
 }
 
-export type Context = { chars: string[]; hanzi?: Map<string, HanziData | null> }
+export type Context = {
+  chars: string[]
+  hanzi?: Map<string, HanziData | null>
+  /** `skeleton` 没写 `source` 时用哪种；字形本身来自逐笔数据时是 `hanzi` */
+  source?: StrokeSource
+}
 
 export const STROKE_OPS = new Set(['skeleton', 'transform', 'extend', 'snap', 'smooth', 'jitter', 'connect', 'brush'])
 
@@ -129,8 +134,9 @@ export function needsHanzi(steps: Step[]): boolean {
   return steps.some((s) => STROKE_OPS.has(s.op) && !(s.op === 'skeleton' && s.source === 'auto'))
 }
 
-export function strokesOf(w: Work, ctx: Context, source: StrokeSource = 'hybrid'): StrokeGlyph {
+export function strokesOf(w: Work, ctx: Context, wanted?: StrokeSource): StrokeGlyph {
   if (w.strokes) return w.strokes
+  const source = wanted ?? ctx.source ?? 'hybrid'
   const data = source === 'auto' ? null : (ctx.hanzi?.get(w.char) ?? null)
   const sg = !data ? fromSkeleton(skeletonOf(w), w.em) : source === 'hanzi' ? fromHanzi(data, w.rings, w.em) : hybrid(data, w.rings, skeletonOf(w), w.em)
   for (const s of sg.strokes) s.glyph = w.index
