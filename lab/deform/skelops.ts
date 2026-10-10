@@ -191,7 +191,8 @@ export function straightenStrokes(strokes: SStroke[], p: { within?: number; tole
       const l = Math.hypot(pb.x - pa.x, pb.y - pa.y) || 1
       for (let k = a; k <= b; k++) dev = Math.max(dev, Math.abs(((pts[k]!.x - pa.x) * (pb.y - pa.y) - (pts[k]!.y - pa.y) * (pb.x - pa.x)) / l))
       const seg: Seg = { a, b }
-      if (near != null && dev < tol && l > em * 0.03) {
+      // 楷体长横会微微拱起，允许的偏差随段长放宽
+      if (near != null && dev < Math.max(tol, l * 0.05) && l > em * 0.03) {
         const n = b - a + 1
         const c = { x: 0, y: 0 }
         for (let k = a; k <= b; k++) {
@@ -474,6 +475,7 @@ export function brush(sg: StrokeGlyph, params: BrushParams, em: number): Ring[] 
   const fit = p.fit ?? true
   const parts: Ring[] = []
   const constant = new Map<number, Point[][]>()
+  const placed: Point[] = []
   for (const s of sg.strokes) {
     if (s.pts.length === 0) continue
     const len = polyLength(s.pts)
@@ -533,7 +535,7 @@ export function brush(sg: StrokeGlyph, params: BrushParams, em: number): Ring[] 
       trim(false)
     }
     if (p.stamp && !s.link) {
-      parts.push(...stamps(pts, ws, p.stamp, em))
+      parts.push(...stamps(pts, ws, p.stamp, em, placed))
     } else if (p.pen === 'nib') {
       const w = ws.reduce((a, b) => a + b, 0) / ws.length
       parts.push(...sweep([pts], nib(w, p.nibThin ?? 0.25, p.nibAngle ?? -40)))
@@ -585,16 +587,23 @@ function foldProfile(pts: Point[], p: BrushParams, em: number): number[] {
   return k
 }
 
-/** 沿笔画按弧长等距盖图形。 */
-function stamps(pts: Point[], ws: number[], st: NonNullable<BrushParams['stamp']>, em: number): Ring[] {
+/** 沿笔画按弧长等距盖图形。离别的笔画已盖的点太近就跳过，交叉处不会挤成一团。 */
+function stamps(pts: Point[], ws: number[], st: NonNullable<BrushParams['stamp']>, em: number, placed: Point[]): Ring[] {
   const spacing = (st.spacing ?? 0.05) * em
   const out: Ring[] = []
+  const others = placed.length
+  const crowded = (q: Point) => {
+    for (let j = 0; j < others; j++) if (Math.hypot(placed[j]!.x - q.x, placed[j]!.y - q.y) < spacing * 0.85) return true
+    return false
+  }
   let acc = spacing
   for (let i = 0; i < pts.length; i++) {
     if (i > 0) acc += Math.hypot(pts[i]!.x - pts[i - 1]!.x, pts[i]!.y - pts[i - 1]!.y)
     if (acc < spacing && i < pts.length - 1) continue
     if (acc < spacing * 0.5) continue
+    if (crowded(pts[i]!)) continue
     acc = 0
+    placed.push(pts[i]!)
     out.push(...shape(st.shape ?? 'circle', pts[i]!, st.size != null ? st.size * em : ws[i]! * (st.scale ?? 1), st.angle))
   }
   return out
