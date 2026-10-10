@@ -2,12 +2,14 @@
   "lines": [
     "海棠未雨"
   ],
-  "font": "NotoSans",
-  "weight": 400,
+  "font": "hanzi",
   "tracking": 0.32,
   "steps": [
     {
       "op": "skeleton"
+    },
+    {
+      "op": "straighten"
     },
     {
       "op": "brush",
@@ -29,11 +31,11 @@
       "points": [
         [
           0.04,
-          1.45
+          1.15
         ],
         [
           2.75,
-          1.45
+          1.15
         ]
       ],
       "width": 0.004,
@@ -44,7 +46,7 @@
       "text": "HAI TANG WEI YU",
       "at": [
         3.86,
-        1.45
+        1.15
       ],
       "size": 0.075,
       "font": "Inter",
@@ -57,7 +59,7 @@
       "text": "hǎi táng wèi yǔ",
       "at": [
         5.2,
-        0.78
+        0.48
       ],
       "size": 0.07,
       "font": "Inter",

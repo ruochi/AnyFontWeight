@@ -3,8 +3,7 @@
     "高级",
     "动物"
   ],
-  "font": "NotoSans",
-  "weight": 400,
+  "font": "hanzi",
   "tracking": 0.02,
   "leading": 1.08,
   "steps": [
@@ -12,13 +11,16 @@
       "op": "skeleton"
     },
     {
-      "op": "smooth",
-      "amount": 0.004
+      "op": "straighten"
+    },
+    {
+      "op": "fillet",
+      "radius": 0.05
     },
     {
       "op": "brush",
-      "width": 0.032,
-      "cap": "round"
+      "preset": "单线",
+      "width": 0.032
     }
   ],
   "fill": "#f1f1ee",

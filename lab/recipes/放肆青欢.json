@@ -2,12 +2,15 @@
   "lines": [
     "放肆青欢"
   ],
-  "font": "NotoSans",
-  "weight": 500,
+  "font": "hanzi",
   "tracking": -0.02,
   "steps": [
     {
       "op": "skeleton"
+    },
+    {
+      "op": "fillet",
+      "radius": 0.06
     },
     {
       "op": "transform",
@@ -32,8 +35,8 @@
     },
     {
       "op": "brush",
-      "width": 0.06,
-      "cap": "round"
+      "preset": "圆体",
+      "width": 0.07
     }
   ],
   "post": [
