@@ -541,7 +541,12 @@ export function brush(sg: StrokeGlyph, params: BrushParams, em: number): Ring[] 
     if (p.stamp && !s.link) {
       parts.push(...stamps(pts, ws, p.stamp, em, placed))
     } else if (p.footprint) {
-      parts.push(...footprintStroke(pts, ws, s.type, corners(pts, em, 40), p.footprint, em, !!s.link))
+      parts.push(
+        ...footprintStroke(pts, ws, s.type, corners(pts, em, 40), p.footprint, em, !!s.link, {
+          start: s.start.kind === 'free',
+          end: s.end.kind === 'free',
+        }),
+      )
     } else if (p.pen === 'nib') {
       const w = ws.reduce((a, b) => a + b, 0) / ws.length
       parts.push(...sweep([pts], nib(w, p.nibThin ?? 0.25, p.nibAngle ?? -40)))

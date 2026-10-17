@@ -113,21 +113,46 @@ function blend(st: PenState, m: PenMove | null | undefined, d: number, segLen: n
  * 用形状笔尖画一笔。`cuts` 是转角处的点序号，笔画在那里分段，每段按走向找起笔、收笔规则；
  * 一笔只有一段时用这一笔自己的类型。`ks` 是逐点的粗细倍数（压感、牵丝）。
  */
-export function footprintStroke(pts: Point[], ks: number[], type: StrokeType, cuts: number[], fp: Footprint, em: number, plain = false): Ring[] {
-  const prints = footprintPrints(pts, ks, type, cuts, fp, em, plain)
+export function footprintStroke(
+  pts: Point[],
+  ks: number[],
+  type: StrokeType,
+  cuts: number[],
+  fp: Footprint,
+  em: number,
+  plain = false,
+  free: { start: boolean; end: boolean } = { start: true, end: true },
+): Ring[] {
+  const prints = footprintPrints(pts, ks, type, cuts, fp, em, plain, free)
   if (prints.length === 1) return [hull(prints[0]!)]
   const out: Ring[] = []
   for (let i = 1; i < prints.length; i++) out.push(hull([...prints[i - 1]!, ...prints[i]!]))
   return out
 }
 
-/** 逐点的笔尖印，转角处前后两段各盖一个。 */
-export function footprintPrints(pts: Point[], ks: number[], type: StrokeType, cuts: number[], fp: Footprint, em: number, plain = false): Point[][] {
+/**
+ * 逐点的笔尖印。笔尖跟着走向转时，转角处从上一段的方向一点点转到下一段，外角是圆的，不会缺一块。
+ * 起笔、收笔动作只在自由端做，接在别的笔画上的一头不转笔也不顿笔，否则接头处会斜出一角或缺一块。
+ */
+export function footprintPrints(
+  pts: Point[],
+  ks: number[],
+  type: StrokeType,
+  cuts: number[],
+  fp: Footprint,
+  em: number,
+  plain = false,
+  free: { start: boolean; end: boolean } = { start: true, end: true },
+): Point[][] {
   if (pts.length === 0) return []
   const arc: number[] = [0]
   for (let i = 1; i < pts.length; i++) arc.push(arc[i - 1]! + Math.hypot(pts[i]!.x - pts[i - 1]!.x, pts[i]!.y - pts[i - 1]!.y))
   const bounds = [0, ...cuts.filter((c) => c > 0 && c < pts.length - 1), pts.length - 1]
   const prints: Point[][] = []
+  let prevDir: Point | null = null
+  // 方向取前后约 0.03 em 的弦；只看相邻两点时，中线上一点小折就会让宽笔尖的两角探出去
+  const step = pts.length > 1 ? arc[arc.length - 1]! / (pts.length - 1) : 1
+  const reach = Math.max(2, Math.round((em * 0.03) / (step || 1)))
   for (let s = 1; s < bounds.length; s++) {
     const a = bounds[s - 1]!
     const b = bounds[s]!
@@ -140,19 +165,31 @@ export function footprintPrints(pts: Point[], ks: number[], type: StrokeType, cu
     const rule = fp.byType?.[t]
     const startMove = rule && 'start' in rule ? rule.start : fp.start
     const endMove = rule && 'end' in rule ? rule.end : fp.end
-    const doStart = first && !plain
-    const doEnd = !plain && (last || (fp.turns ?? true))
+    const doStart = first && !plain && free.start
+    const doEnd = !plain && (last ? free.end : (fp.turns ?? true))
     const chord = { x: pts[b]!.x - pts[a]!.x, y: pts[b]!.y - pts[a]!.y }
     const cl = Math.hypot(chord.x, chord.y) || 1
     for (let i = a; i <= b; i++) {
-      const p = pts[Math.max(a, i - 2)]!
-      const q = pts[Math.min(b, i + 2)]!
+      const p = pts[Math.max(a, i - reach)]!
+      const q = pts[Math.min(b, i + reach)]!
       const l = Math.hypot(q.x - p.x, q.y - p.y)
       const dir = l > 1e-6 ? { x: (q.x - p.x) / l, y: (q.y - p.y) / l } : { x: chord.x / cl, y: chord.y / cl }
       const st: PenState = { angle: fp.angle ?? 0, sx: 1, sy: 1, shift: 0 }
       if (doStart) blend(st, startMove, arc[i]! - arc[a]!, segLen, em)
       if (doEnd) blend(st, endMove, arc[b]! - arc[i]!, segLen, em)
+      if (i === a && prevDir && fp.follow) {
+        const from = Math.atan2(prevDir.y, prevDir.x)
+        let delta = Math.atan2(dir.y, dir.x) - from
+        if (delta > Math.PI) delta -= Math.PI * 2
+        if (delta < -Math.PI) delta += Math.PI * 2
+        const steps = Math.ceil(Math.abs(delta) / rad(10))
+        for (let k = 1; k < steps; k++) {
+          const ang = from + (delta * k) / steps
+          prints.push(print(fp, pts[i]!, { x: Math.cos(ang), y: Math.sin(ang) }, st, ks[i] ?? 1, em))
+        }
+      }
       prints.push(print(fp, pts[i]!, dir, st, ks[i] ?? 1, em))
+      if (i === b) prevDir = dir
     }
   }
   return prints
