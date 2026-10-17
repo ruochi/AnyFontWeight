@@ -54,4 +54,51 @@ export const BRUSHES: Record<string, BrushParams & { note: string }> = {
   勾线: { note: '两头尖、中间略粗的细线，像钢笔勾线', width: 0.032, pressure: [0.4, 1, 1, 0.4], taper: [0.05, 0.05] },
   空心: { note: '粗圆头描成空心双线', width: 0.11, cap: 'round', hollow: 0.016 },
   点阵: { note: '沿笔画等距排圆点', width: 0.042, stamp: { shape: 'circle', spacing: 0.06, scale: 1 } },
+  圆笔: { note: '圆形笔尖，扫出来是圆体', footprint: { shape: 'circle', size: [0.075, 0.075] } },
+  方笔随转: { note: '方形笔尖跟着走向转，笔画处处等宽、端头平，扫出来是黑体', footprint: { shape: 'rect', size: [0.07, 0.07], follow: true } },
+  方笔不转: { note: '方形笔尖方向不变，横竖等宽，斜笔画粗到 1.4 倍', footprint: { shape: 'rect', size: [0.062, 0.062] } },
+  斜切黑: {
+    note: '窄矩形跟着走向转，起笔、收笔各转 45°，端头斜切',
+    footprint: {
+      shape: 'rect',
+      size: [0.02, 0.072],
+      follow: true,
+      start: { length: 0.03, turn: -45, scale: [1, 1.41] },
+      end: { length: 0.03, turn: -45, scale: [1, 1.41] },
+      turns: false,
+    },
+  },
+  横扁笔: { note: '横扁矩形笔尖不转：横走时只剩矩形的高，竖走时是矩形的宽，天然横细竖粗', footprint: { shape: 'rect', size: [0.085, 0.03] } },
+  宋体笔: {
+    note: '横扁笔加转笔、顿笔：横的收笔和横折的转角顿出三角，竖起笔斜切，撇、提出锋，点和捺由轻到重',
+    footprint: {
+      shape: 'rect',
+      size: [0.078, 0.022],
+      byType: {
+        横: { start: { length: 0.035, scale: [0.4, 1] }, end: { length: 0.1, scale: [0.7, 3.8], shift: 0.03, ease: 1.6, peak: 0.38, release: 0.2 } },
+        竖: { start: { length: 0.045, turn: -32 }, end: null },
+        撇: { start: { length: 0.04, turn: -32 }, end: { length: 'all', scale: [0.18, 0.5], ease: 1.3 } },
+        捺: { start: { length: 'all', scale: [0.3, 0.6] }, end: { length: 0.05, scale: [1.35, 1] } },
+        点: { start: { length: 'all', scale: [0.35, 0.6], ease: 1.2 }, end: null },
+        提: { start: null, end: { length: 'all', scale: [0.2, 0.5] } },
+      },
+    },
+  },
+  魏碑笔: {
+    note: '斜扁笔尖：落笔转笔斜切、横竖收笔顿一下，撇、提出锋，捺先轻后重、收笔转平',
+    footprint: {
+      shape: 'rect',
+      size: [0.095, 0.024],
+      angle: -35,
+      start: { length: 0.05, turn: -30, scale: 1.25, ease: 1.5 },
+      byType: {
+        横: { end: { length: 0.05, scale: 1.3, shift: -0.012, turn: 30, ease: 1.5 } },
+        竖: { end: { length: 0.05, scale: 1.2, turn: 25, ease: 1.5 } },
+        撇: { end: { length: 'all', scale: [0.25, 0.6], ease: 1.5 } },
+        提: { end: { length: 'all', scale: [0.25, 0.6] } },
+        捺: { start: { length: 'all', scale: 0.45 }, end: { length: 0.07, turn: 35, scale: [1.4, 1], ease: 1.5 } },
+        点: { start: { length: 'all', scale: 0.45 } },
+      },
+    },
+  },
 }
