@@ -1,10 +1,11 @@
 import { glyph } from 'flexlayer'
 import type { Point, Ring } from '../../src/types.js'
 import { ringsToCurvePath } from './bezier.js'
-import { union } from './bool.js'
+import { circle, offset, strokeLines, union } from './bool.js'
 import { esc, layerDoc, n } from './draw.js'
 import { HANZI_FONT, loadGlyphs } from './glyphs.js'
 import { loadHanzi, type HanziData } from './hanzi.js'
+import { icon, type IconName } from './icons.js'
 import { ensureRings, needsHanzi, runSteps, STROKE_OPS, type Context, type Step, type Work } from './ops.js'
 import type { SStroke } from './strokes.js'
 import { mapRings, pathToRings, ringsBounds, ringsToPath, simplifyRing } from './outline.js'
@@ -41,6 +42,8 @@ export type Recipe = {
   /** 原样写到字形 path 上的 flexlayer 属性，比如 `{ "inner-shadow": "0 6 10 #0006" }` */
   attrs?: Record<string, string>
   background?: string
+  /** 字外面一圈描边（贴纸那种黑边），压住底下的装饰。`width` 是 em */
+  outline?: { width: number; color?: string }
   decor?: Decor[]
   /** 画面四周留白 */
   padding?: number
@@ -48,10 +51,16 @@ export type Recipe = {
   curves?: boolean
 }
 
-type Color = { color?: string }
+/**
+ * 所有装饰共有的字段。默认画在字下面，`above` 画到字上面；
+ * `outline` 给装饰自己加一圈 `outlineColor`（默认黑）的描边，宽度是 em。
+ */
+type Common = { color?: string; above?: boolean; outline?: number; outlineColor?: string }
+/** 线的粗细沿长度变化：两头各用全长的多少比例从 0 长到 `width`；一个数表示两头一样 */
+type Taper = number | [number, number]
 export type Decor =
-  | ({ type: 'sparkle'; at: [number, number]; size: number } & Color)
-  | ({ type: 'dot'; at: [number, number]; size: number } & Color)
+  | ({ type: 'sparkle'; at: [number, number]; size: number } & Common)
+  | ({ type: 'dot'; at: [number, number]; size: number } & Common)
   | ({
       type: 'orbit'
       center: [number, number]
@@ -61,10 +70,20 @@ export type Decor =
       from?: number
       to?: number
       width?: number
-    } & Color)
-  /** 折线，`dash` 是 [实, 虚] 的 em 长度 */
-  | ({ type: 'line'; points: Array<[number, number]>; width?: number; dash?: [number, number]; cap?: 'round' | 'butt' } & Color)
-  /** 小字，比如拼音、英文副标题。`at` 是文字块的中心 */
+      taper?: Taper
+      dash?: [number, number]
+    } & Common)
+  /** 折线，`dash` 是 [实, 虚] 的 em 长度；`smooth` 把折点连成圆滑曲线 */
+  | ({
+      type: 'line'
+      points: Array<[number, number]>
+      width?: number
+      dash?: [number, number]
+      cap?: 'round' | 'butt'
+      smooth?: boolean
+      taper?: Taper
+    } & Common)
+  /** 小字，比如拼音、英文副标题。`at` 是文字块的中心，`skew` 是斜体角度，正数向右倒 */
   | ({
       type: 'text'
       text: string
@@ -75,7 +94,13 @@ export type Decor =
       letterSpacing?: number
       vertical?: boolean
       rotate?: number
-    } & Color)
+      skew?: number
+    } & Common)
+  /** 小图标，名字见 `icons.ts`。`size` 是图标宽度 */
+  | ({ type: 'icon'; name: IconName; at: [number, number]; size: number; rotate?: number; flip?: boolean } & Common)
+
+/** 一件装饰画出来的样子：flexlayer 和 SVG 两份，外加描边用的轮廓 */
+export type DecorPiece = { layer: string; svg: string; above: boolean; knock?: { rings: Ring[]; color: string } }
 
 export function recipeText(r: Recipe): string {
   return r.lines.join('')
@@ -127,7 +152,7 @@ export type Trace = {
   }>
 }
 
-export type Composition = { rings: Ring[]; decorShapes: string[]; decorSvg: string[]; bounds: Bounds; trace?: Trace }
+export type Composition = { rings: Ring[]; outline?: Ring[]; decor: DecorPiece[]; bounds: Bounds; trace?: Trace }
 
 export async function compose(r: Recipe, opts: { trace?: boolean } = {}): Promise<Composition> {
   const em = sourceOptions(r).size
@@ -208,9 +233,10 @@ export async function compose(r: Recipe, opts: { trace?: boolean } = {}): Promis
     const last = whole.trace?.[whole.trace.length - 1]
     if (trace && last) for (const g of trace.glyphs) g.strokes = last.strokes.filter((s) => s.glyph === g.index)
   }
-  const { shapes, svg, points } = await drawDecor(r.decor ?? [], em, r.fill ?? '#ffffff')
-  const b = ringsBounds([...out, points])
-  return { rings: out, decorShapes: shapes, decorSvg: svg, bounds: b, trace }
+  const { pieces, points } = await drawDecor(r.decor ?? [], em, r.fill ?? '#ffffff')
+  const outline = r.outline ? offset(union(out), r.outline.width * em) : undefined
+  const b = ringsBounds([...(outline ?? out), points])
+  return { rings: out, outline, decor: pieces, bounds: b, trace }
 }
 
 function sparklePath(c: Point, size: number): string {
@@ -256,50 +282,175 @@ async function textRings(d: Extract<Decor, { type: 'text' }>, em: number): Promi
   const cx = (b.minX + b.maxX) / 2
   const cy = (b.minY + b.maxY) / 2
   const a = ((d.rotate ?? 0) * Math.PI) / 180
+  const k = Math.tan(((d.skew ?? 0) * Math.PI) / 180)
   return mapRings(rings, (p) => {
-    const ux = p.x - cx
     const uy = p.y - cy
+    const ux = p.x - cx - uy * k
     return { x: d.at[0] * em + ux * Math.cos(a) - uy * Math.sin(a), y: d.at[1] * em + ux * Math.sin(a) + uy * Math.cos(a) }
   })
 }
 
-async function drawDecor(decor: Decor[], em: number, fallback: string): Promise<{ shapes: string[]; svg: string[]; points: Point[] }> {
-  const shapes: string[] = []
-  const svg: string[] = []
+/** Catmull-Rom 曲线穿过每个折点 */
+function smoothLine(pts: Point[], per = 16): Point[] {
+  if (pts.length < 3) return pts
+  const out: Point[] = [pts[0]!]
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p0 = pts[Math.max(0, i - 1)]!
+    const p1 = pts[i]!
+    const p2 = pts[i + 1]!
+    const p3 = pts[Math.min(pts.length - 1, i + 2)]!
+    for (let j = 1; j <= per; j++) {
+      const t = j / per
+      const t2 = t * t
+      const t3 = t2 * t
+      const f = (a: number, b: number, c: number, d: number) =>
+        0.5 * (2 * b + (-a + c) * t + (2 * a - 5 * b + 4 * c - d) * t2 + (-a + 3 * b - 3 * c + d) * t3)
+      out.push({ x: f(p0.x, p1.x, p2.x, p3.x), y: f(p0.y, p1.y, p2.y, p3.y) })
+    }
+  }
+  return out
+}
+
+/** 长段切成不超过 `step` 的小段，粗细才能沿长度变化 */
+function densify(pts: Point[], step: number): Point[] {
+  const out: Point[] = pts.slice(0, 1)
+  for (let i = 1; i < pts.length; i++) {
+    const a = pts[i - 1]!
+    const b = pts[i]!
+    const k = Math.max(1, Math.ceil(Math.hypot(b.x - a.x, b.y - a.y) / step))
+    for (let j = 1; j <= k; j++) out.push({ x: a.x + ((b.x - a.x) * j) / k, y: a.y + ((b.y - a.y) * j) / k })
+  }
+  return out
+}
+
+type Run = { pts: Point[]; s: number[] }
+
+/** 按 [实, 虚] 把线切成一段段，每个点带着它在整条线上的弧长 */
+function dashRuns(pts: Point[], dash?: [number, number]): { runs: Run[]; total: number } {
+  const s = [0]
+  for (let i = 1; i < pts.length; i++) s.push(s[i - 1]! + Math.hypot(pts[i]!.x - pts[i - 1]!.x, pts[i]!.y - pts[i - 1]!.y))
+  const total = s[s.length - 1]!
+  if (!dash || dash[0] <= 0) return { runs: [{ pts, s }], total }
+  const at = (d: number): Point => {
+    let i = 1
+    while (i < s.length - 1 && s[i]! < d) i++
+    const t = (d - s[i - 1]!) / (s[i]! - s[i - 1]! || 1)
+    return { x: pts[i - 1]!.x + (pts[i]!.x - pts[i - 1]!.x) * t, y: pts[i - 1]!.y + (pts[i]!.y - pts[i - 1]!.y) * t }
+  }
+  const runs: Run[] = []
+  for (let d0 = 0; d0 < total; d0 += dash[0] + dash[1]) {
+    const d1 = Math.min(total, d0 + dash[0])
+    const run: Run = { pts: [at(d0)], s: [d0] }
+    for (let i = 0; i < s.length; i++) if (s[i]! > d0 && s[i]! < d1) run.pts.push(pts[i]!), run.s.push(s[i]!)
+    run.pts.push(at(d1))
+    run.s.push(d1)
+    runs.push(run)
+  }
+  return { runs, total }
+}
+
+/** 两头收尖的粗细：在收尖的那一段里按四分之一正弦从 0 长到满 */
+function taperAt(s: number, total: number, taper: Taper): number {
+  const [a, b] = typeof taper === 'number' ? [taper, taper] : taper
+  const u = Math.min(1, a > 0 ? s / (a * total) : 1, b > 0 ? (total - s) / (b * total) : 1)
+  return Math.sin((Math.max(0, u) * Math.PI) / 2)
+}
+
+/** 沿线铺一条宽度可变的带子 */
+function ribbon(run: Run, width: (s: number) => number): Ring {
+  const left: Point[] = []
+  const right: Point[] = []
+  const { pts } = run
+  for (let i = 0; i < pts.length; i++) {
+    const a = pts[Math.max(0, i - 1)]!
+    const b = pts[Math.min(pts.length - 1, i + 1)]!
+    const len = Math.hypot(b.x - a.x, b.y - a.y) || 1
+    const nx = -(b.y - a.y) / len
+    const ny = (b.x - a.x) / len
+    const h = width(run.s[i]!) / 2
+    left.push({ x: pts[i]!.x + nx * h, y: pts[i]!.y + ny * h })
+    right.push({ x: pts[i]!.x - nx * h, y: pts[i]!.y - ny * h })
+  }
+  return [...left, ...right.reverse()]
+}
+
+function linePoints(d: Extract<Decor, { type: 'orbit' | 'line' }>, em: number): Point[] {
+  if (d.type === 'orbit') return orbitPoints(d, em)
+  const pts = d.points.map(([x, y]) => ({ x: x * em, y: y * em }))
+  return d.smooth ? smoothLine(pts) : pts
+}
+
+async function drawDecor(decor: Decor[], em: number, fallback: string): Promise<{ pieces: DecorPiece[]; points: Point[] }> {
+  const pieces: DecorPiece[] = []
   const points: Point[] = []
   for (const d of decor) {
     const color = d.color ?? fallback
+    let layer: string
+    let svg: string
+    let rings: Ring[]
     if (d.type === 'sparkle' || d.type === 'dot') {
       const c = { x: d.at[0] * em, y: d.at[1] * em }
       const size = d.size * em
-      points.push({ x: c.x - size / 2, y: c.y - size / 2 }, { x: c.x + size / 2, y: c.y + size / 2 })
       if (d.type === 'sparkle') {
         const path = sparklePath(c, size)
-        shapes.push(`<path d="${path}" fill="${color}" stroke="none" glow="${n(size * 0.6)} ${color}" />`)
-        svg.push(`<path d="${path}" fill="${color}"/>`)
+        layer = `<path d="${path}" fill="${color}" stroke="none" glow="${n(size * 0.6)} ${color}" />`
+        svg = `<path d="${path}" fill="${color}"/>`
+        rings = d.outline ? pathToRings(path, size * 0.005) : []
       } else {
-        shapes.push(`<circle cx="${n(c.x)}" cy="${n(c.y)}" r="${n(size / 2)}" fill="${color}" />`)
-        svg.push(`<circle cx="${n(c.x)}" cy="${n(c.y)}" r="${n(size / 2)}" fill="${color}"/>`)
+        layer = `<circle cx="${n(c.x)}" cy="${n(c.y)}" r="${n(size / 2)}" fill="${color}" />`
+        svg = `<circle cx="${n(c.x)}" cy="${n(c.y)}" r="${n(size / 2)}" fill="${color}"/>`
+        rings = d.outline ? [circle(c, size / 2)] : []
       }
-    } else if (d.type === 'text') {
-      const rings = await textRings(d, em)
-      points.push(...rings.flat())
+      points.push({ x: c.x - size / 2, y: c.y - size / 2 }, { x: c.x + size / 2, y: c.y + size / 2 })
+    } else if (d.type === 'text' || d.type === 'icon') {
+      rings = d.type === 'text' ? await textRings(d, em) : icon(d.name, { x: d.at[0] * em, y: d.at[1] * em }, d.size * em, d.rotate, d.flip)
       const path = ringsToPath(rings)
-      shapes.push(`<path d="${path}" fill="${color}" stroke="none" />`)
-      svg.push(`<path d="${path}" fill="${color}"/>`)
+      layer = `<path d="${path}" fill="${color}" stroke="none" />`
+      svg = `<path d="${path}" fill="${color}"/>`
     } else {
-      const pts =
-        d.type === 'orbit' ? orbitPoints(d, em) : d.points.map(([x, y]) => ({ x: x * em, y: y * em }))
-      points.push(...pts)
-      const path = `M${pts.map((p) => `${n(p.x)} ${n(p.y)}`).join('L')}`
-      const w = n((d.width ?? 0.006) * em)
+      const pts = linePoints(d, em)
+      const w = (d.width ?? 0.006) * em
       const cap = d.type === 'line' ? (d.cap ?? 'round') : 'round'
-      const dash = d.type === 'line' && d.dash ? ` stroke-dasharray="${n(d.dash[0] * em)} ${n(d.dash[1] * em)}"` : ''
-      shapes.push(`<path d="${path}" fill="none" stroke="${color}" stroke-width="${w}" stroke-linecap="${cap}"${dash} />`)
-      svg.push(`<path d="${path}" fill="none" stroke="${color}" stroke-width="${w}" stroke-linecap="${cap}"${dash}/>`)
+      if (d.taper !== undefined || d.outline) {
+        const { runs, total } = dashRuns(densify(pts, em * 0.01), d.dash && [d.dash[0] * em, d.dash[1] * em])
+        const taper = d.taper
+        rings =
+          taper === undefined
+            ? strokeLines(
+                runs.map((r) => r.pts),
+                w,
+                cap,
+              )
+            : union(runs.map((r) => ribbon(r, (s) => w * taperAt(s, total, taper))))
+        const path = ringsToPath(rings)
+        layer = `<path d="${path}" fill="${color}" stroke="none" />`
+        svg = `<path d="${path}" fill="${color}"/>`
+      } else {
+        const path = `M${pts.map((p) => `${n(p.x)} ${n(p.y)}`).join('L')}`
+        const dash = d.dash ? ` stroke-dasharray="${n(d.dash[0] * em)} ${n(d.dash[1] * em)}"` : ''
+        layer = `<path d="${path}" fill="none" stroke="${color}" stroke-width="${n(w)}" stroke-linecap="${cap}"${dash} />`
+        svg = `<path d="${path}" fill="none" stroke="${color}" stroke-width="${n(w)}" stroke-linecap="${cap}"${dash}/>`
+        rings = []
+        points.push(...pts)
+      }
     }
+    const knock = d.outline && rings.length ? { rings: offset(union(rings), d.outline * em), color: d.outlineColor ?? '#000000' } : undefined
+    points.push(...rings.flat(), ...(knock?.rings.flat() ?? []))
+    pieces.push({ layer, svg, above: !!d.above, knock })
   }
-  return { shapes, svg, points }
+  return { pieces, points }
+}
+
+function pieceDocs(pieces: DecorPiece[], kind: 'layer' | 'svg'): string[] {
+  const out: string[] = []
+  for (const p of pieces) {
+    if (p.knock) {
+      const d = ringsToPath(p.knock.rings)
+      out.push(kind === 'layer' ? `<path d="${d}" fill="${p.knock.color}" stroke="none" />` : `<path d="${d}" fill="${p.knock.color}"/>`)
+    }
+    out.push(p[kind])
+  }
+  return out
 }
 
 export function toDocuments(r: Recipe, c: Composition): { layer: string; svg: string } {
@@ -310,28 +461,36 @@ export function toDocuments(r: Recipe, c: Composition): { layer: string; svg: st
   const ox = pad - c.bounds.minX
   const oy = pad - c.bounds.minY
   const fill = r.fill ?? '#ffffff'
-  const moved = mapRings(c.rings, (p) => ({ x: p.x + ox, y: p.y + oy }))
-  const d = r.curves === false ? ringsToPath(moved) : ringsToCurvePath(moved, em * 0.0012)
+  const toPath = (rings: Ring[]) => {
+    const moved = mapRings(rings, (p) => ({ x: p.x + ox, y: p.y + oy }))
+    return r.curves === false ? ringsToPath(moved) : ringsToCurvePath(moved, em * 0.0012)
+  }
+  const d = toPath(c.rings)
+  const outline = c.outline ? toPath(c.outline) : ''
+  const outlineColor = r.outline?.color ?? '#000000'
   const glow = r.glow ? ` glow="${esc(r.glow)}"` : ''
   const extra = Object.entries(r.attrs ?? {})
     .map(([k, v]) => ` ${k}="${esc(v)}"`)
     .join('')
   const bg = r.background ?? '#16181d'
+  const below = c.decor.filter((p) => !p.above)
+  const above = c.decor.filter((p) => p.above)
+  const group = (body: string[]) => (body.length ? [`<g transform="translate(${n(ox)},${n(oy)})">`, ...body, `</g>`] : [])
   const layer = layerDoc(w, h, bg.includes('gradient') ? '#000000' : bg, [
     `<rect x="0" y="0" width="${n(w)}" height="${n(h)}" fill="${esc(bg)}" />`,
-    `<g transform="translate(${n(ox)},${n(oy)})">`,
-    ...c.decorShapes,
-    `</g>`,
+    ...group(pieceDocs(below, 'layer')),
+    outline ? `<path d="${outline}" fill="${esc(outlineColor)}" stroke="none" />` : '',
     `<path d="${d}" fill="${esc(fill)}" stroke="none"${glow}${extra} />`,
-  ])
+    ...group(pieceDocs(above, 'layer')),
+  ].filter(Boolean))
   const svgFill = fill.includes('gradient') ? '#ffffff' : fill
   const svg = [
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${n(w)} ${n(h)}" width="${n(w)}" height="${n(h)}">`,
     bg.includes('gradient') ? '' : `<rect width="100%" height="100%" fill="${bg}"/>`,
-    `<g transform="translate(${n(ox)},${n(oy)})">`,
-    ...c.decorSvg,
-    `</g>`,
+    ...group(pieceDocs(below, 'svg')),
+    outline ? `<path d="${outline}" fill="${outlineColor}" fill-rule="nonzero"/>` : '',
     `<path d="${d}" fill="${svgFill}" fill-rule="nonzero"/>`,
+    ...group(pieceDocs(above, 'svg')),
     `</svg>`,
   ]
     .filter(Boolean)
