@@ -1,0 +1,26 @@
+{
+  "lines": [
+    "宁静",
+    "致远"
+  ],
+  "font": "hanzi",
+  "tracking": 0,
+  "leading": 1.05,
+  "steps": [
+    {
+      "op": "skeleton"
+    },
+    {
+      "op": "jitter",
+      "amount": 0.004,
+      "wavelength": 0.3,
+      "seed": 5
+    },
+    {
+      "op": "brush",
+      "preset": "飞白"
+    }
+  ],
+  "fill": "#1f1f1f",
+  "background": "#f2ecdf"
+}

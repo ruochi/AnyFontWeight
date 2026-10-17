@@ -1,0 +1,28 @@
+{
+  "lines": [
+    "高级",
+    "动物"
+  ],
+  "font": "hanzi",
+  "tracking": 0.02,
+  "leading": 1.08,
+  "steps": [
+    {
+      "op": "skeleton"
+    },
+    {
+      "op": "straighten"
+    },
+    {
+      "op": "fillet",
+      "radius": 0.05
+    },
+    {
+      "op": "brush",
+      "preset": "单线",
+      "width": 0.032
+    }
+  ],
+  "fill": "#f1f1ee",
+  "background": "#1b1c1f"
+}

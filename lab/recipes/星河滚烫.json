@@ -1,0 +1,22 @@
+{
+  "lines": [
+    "星河滚烫"
+  ],
+  "font": "hanzi",
+  "tracking": 0.04,
+  "steps": [
+    {
+      "op": "skeleton"
+    },
+    {
+      "op": "straighten"
+    },
+    {
+      "op": "brush",
+      "preset": "点阵"
+    }
+  ],
+  "fill": "#ffd166",
+  "glow": "16 #ff9f1c",
+  "background": "#140d05"
+}

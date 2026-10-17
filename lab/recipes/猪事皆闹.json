@@ -1,0 +1,10 @@
+{
+  "lines": ["猪事", "皆闹"],
+  "font": "NotoSans",
+  "weight": 500,
+  "tracking": 0.02,
+  "leading": 1.02,
+  "steps": [{ "op": "restroke", "width": 0.075, "cap": "butt", "join": "miter", "gap": 0.022, "snap": 45, "simplify": 0.012 }],
+  "fill": "#ffe9b0",
+  "background": "#c8102e"
+}

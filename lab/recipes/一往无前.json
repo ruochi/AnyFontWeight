@@ -1,0 +1,26 @@
+{
+  "lines": [
+    "一往无前"
+  ],
+  "font": "hanzi",
+  "tracking": 0.02,
+  "steps": [
+    {
+      "op": "skeleton"
+    },
+    {
+      "op": "straighten"
+    },
+    {
+      "op": "fillet",
+      "radius": 0.05
+    },
+    {
+      "op": "brush",
+      "preset": "空心",
+      "width": 0.085
+    }
+  ],
+  "fill": "linear-gradient(to right, #38bdf8, #a78bfa)",
+  "background": "#0b1020"
+}

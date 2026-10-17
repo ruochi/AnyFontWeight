@@ -1,0 +1,37 @@
+{
+  "lines": [
+    "举头三尺"
+  ],
+  "font": "hanzi",
+  "tracking": -0.05,
+  "steps": [
+    {
+      "op": "skeleton"
+    },
+    {
+      "op": "straighten"
+    },
+    {
+      "op": "fillet",
+      "radius": 0.04
+    }
+  ],
+  "post": [
+    {
+      "op": "connect",
+      "across": true,
+      "maxGap": 1.6,
+      "tension": 0.7,
+      "minDot": -0.3,
+      "width": 0.8
+    },
+    {
+      "op": "brush",
+      "width": 0.024,
+      "cap": "round"
+    }
+  ],
+  "fill": "#eaffff",
+  "glow": "22 #22d3ee",
+  "background": "#06121a"
+}

@@ -1,0 +1,72 @@
+{
+  "lines": [
+    "海棠未雨"
+  ],
+  "font": "hanzi",
+  "tracking": 0.32,
+  "steps": [
+    {
+      "op": "skeleton"
+    },
+    {
+      "op": "straighten"
+    },
+    {
+      "op": "brush",
+      "width": 0.026,
+      "cap": "butt",
+      "join": "miter",
+      "dots": {
+        "shape": "circle",
+        "scale": 2.4,
+        "all": true
+      }
+    }
+  ],
+  "fill": "#2b2b2b",
+  "background": "#ecebe6",
+  "decor": [
+    {
+      "type": "line",
+      "points": [
+        [
+          0.04,
+          1.15
+        ],
+        [
+          2.75,
+          1.15
+        ]
+      ],
+      "width": 0.004,
+      "color": "#2b2b2b"
+    },
+    {
+      "type": "text",
+      "text": "HAI TANG WEI YU",
+      "at": [
+        3.86,
+        1.15
+      ],
+      "size": 0.075,
+      "font": "Inter",
+      "weight": 500,
+      "letterSpacing": 0.045,
+      "color": "#2b2b2b"
+    },
+    {
+      "type": "text",
+      "text": "hǎi táng wèi yǔ",
+      "at": [
+        5.2,
+        0.48
+      ],
+      "size": 0.07,
+      "font": "Inter",
+      "weight": 400,
+      "rotate": 90,
+      "letterSpacing": 0.012,
+      "color": "#8a8a85"
+    }
+  ]
+}

@@ -13,13 +13,22 @@
   },
   "scripts": {
     "build": "tsc",
-    "test": "vitest run"
+    "test": "vitest run",
+    "lab:analyze": "tsx lab/deform/analyze.ts",
+    "lab:render": "tsx lab/deform/render.ts",
+    "lab:check": "tsc -p lab",
+    "lab:gallery": "tsx lab/deform/gallery.ts"
   },
   "engines": {
     "node": ">=20"
   },
   "license": "MIT",
   "devDependencies": {
+    "@napi-rs/canvas": "^1.0.10",
+    "@types/clipper-lib": "^6.4.0",
+    "clipper-lib": "^6.4.2",
+    "flexlayer": "github:ruochi/flexlayer",
+    "tsx": "^4.23.15",
     "typescript": "~5.4.2",
     "vitest": "^2.1.9"
   }

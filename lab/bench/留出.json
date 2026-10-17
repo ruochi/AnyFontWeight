@@ -1,0 +1,6 @@
+{
+  "lines": ["永和九年岁在癸丑", "暮春之初会于会稽", "天地玄黄宇宙洪荒", "鹅鹅鹅曲项向天歌"],
+  "font": "ChillDuanSans",
+  "weight": 300,
+  "steps": [{ "op": "skeleton" }]
+}

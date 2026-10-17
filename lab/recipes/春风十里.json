@@ -1,0 +1,25 @@
+{
+  "lines": ["春风", "十里"],
+  "font": "ChillDuanSans",
+  "weight": 300,
+  "synthWeight": 800,
+  "contrast": { "vertical": 0.01, "horizontal": -0.012 },
+  "tracking": -0.03,
+  "leading": 0.95,
+  "indent": [0, 0.5],
+  "skew": 8,
+  "swashes": [
+    { "target": "春.8", "length": 0.3, "bend": 35, "curl": 0.65, "curlRadius": 0.1, "taper": 0.12 },
+    { "target": "风.3", "length": 0.1, "bend": 40, "curl": 0.6, "curlRadius": 0.07, "taper": 0.15 },
+    { "target": "十.4", "length": 0.3, "bend": 55, "curl": 0.9, "curlRadius": 0.12, "taper": 0.12 },
+    { "target": "里.4", "length": 0.45, "bend": -18, "taper": 0.03, "swell": 0.1 }
+  ],
+  "fill": "#e9f5d0",
+  "background": "linear-gradient(to bottom, #0f2a24, #123a30 60%, #2f6a4f)",
+  "decor": [
+    { "type": "orbit", "center": [1.25, 1.05], "rx": 1.35, "ry": 0.55, "rotate": -12, "from": 190, "to": 340, "width": 0.005, "color": "#cfe8a8" },
+    { "type": "sparkle", "at": [2.25, 0.25], "size": 0.16, "color": "#f4e7a1" },
+    { "type": "sparkle", "at": [2.4, 0.08], "size": 0.07, "color": "#f4e7a1" },
+    { "type": "dot", "at": [0.2, 1.55], "size": 0.035, "color": "#cfe8a8" }
+  ]
+}

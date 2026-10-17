@@ -1,0 +1,229 @@
+{
+  "lines": [
+    "奔赴山海"
+  ],
+  "font": "hanzi",
+  "tracking": -0.1,
+  "steps": [
+    {
+      "op": "skeleton"
+    },
+    {
+      "op": "straighten"
+    },
+    {
+      "op": "transform",
+      "select": {
+        "types": [
+          "横"
+        ]
+      },
+      "rotate": -5
+    },
+    {
+      "op": "brush",
+      "footprint": {
+        "shape": "rect",
+        "size": [
+          0.02,
+          0.108
+        ],
+        "follow": true,
+        "start": {
+          "length": 0.04,
+          "turn": -35,
+          "scale": [
+            1,
+            1.22
+          ]
+        },
+        "end": {
+          "length": 0.04,
+          "turn": -35,
+          "scale": [
+            1,
+            1.22
+          ]
+        },
+        "byType": {
+          "点": {
+            "start": {
+              "length": "all",
+              "scale": [
+                1,
+                0.55
+              ]
+            },
+            "end": {
+              "length": 0.03,
+              "turn": -35,
+              "scale": [
+                1,
+                1.22
+              ]
+            }
+          },
+          "撇": {
+            "end": {
+              "length": "all",
+              "scale": [
+                1,
+                0.55
+              ],
+              "ease": 1.4
+            }
+          },
+          "提": {
+            "end": {
+              "length": "all",
+              "scale": [
+                1,
+                0.5
+              ]
+            }
+          }
+        },
+        "turns": false
+      }
+    }
+  ],
+  "glyphs": {
+    "0": {
+      "scale": 1.08,
+      "dy": 0.02,
+      "rotate": -3
+    },
+    "1": {
+      "scale": 0.94,
+      "dy": 0.07,
+      "rotate": 2
+    },
+    "2": {
+      "scale": 0.98,
+      "dy": -0.03,
+      "rotate": -2,
+      "dx": -0.08
+    },
+    "3": {
+      "scale": 1.08,
+      "dy": 0.03,
+      "rotate": 3,
+      "dx": -0.1
+    }
+  },
+  "outline": {
+    "width": 0.045,
+    "color": "#000000"
+  },
+  "decor": [
+    {
+      "type": "orbit",
+      "center": [
+        1.62,
+        0.52
+      ],
+      "rx": 2.0,
+      "ry": 0.56,
+      "rotate": -6,
+      "from": 205,
+      "to": 512,
+      "width": 0.085,
+      "taper": [
+        0.3,
+        0.1
+      ],
+      "color": "#ffd23f"
+    },
+    {
+      "type": "line",
+      "points": [
+        [
+          3.66,
+          0.3
+        ],
+        [
+          3.8,
+          0.14
+        ],
+        [
+          3.76,
+          -0.02
+        ],
+        [
+          3.86,
+          -0.17
+        ]
+      ],
+      "smooth": true,
+      "width": 0.018,
+      "dash": [
+        0.05,
+        0.04
+      ],
+      "cap": "round",
+      "color": "#ffffff",
+      "outline": 0.02,
+      "above": true
+    },
+    {
+      "type": "icon",
+      "name": "paper-plane",
+      "at": [
+        4.04,
+        -0.32
+      ],
+      "size": 0.42,
+      "rotate": -2,
+      "color": "#ffffff",
+      "outline": 0.03,
+      "above": true
+    },
+    {
+      "type": "line",
+      "points": [
+        [
+          0.66,
+          1.3
+        ],
+        [
+          1.04,
+          1.3
+        ]
+      ],
+      "width": 0.014,
+      "color": "#ffd23f"
+    },
+    {
+      "type": "text",
+      "text": "Into the Wild",
+      "at": [
+        1.8,
+        1.3
+      ],
+      "size": 0.18,
+      "font": "Playfair",
+      "weight": 700,
+      "skew": 12,
+      "letterSpacing": 0.01,
+      "color": "#ffffff"
+    },
+    {
+      "type": "line",
+      "points": [
+        [
+          2.56,
+          1.3
+        ],
+        [
+          2.94,
+          1.3
+        ]
+      ],
+      "width": 0.014,
+      "color": "#ffd23f"
+    }
+  ],
+  "fill": "#ffffff",
+  "background": "#000000",
+  "padding": 0.25
+}

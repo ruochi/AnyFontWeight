@@ -1,0 +1,195 @@
+{
+  "lines": [
+    "去海边吹风"
+  ],
+  "font": "NotoSansBlack",
+  "weight": 400,
+  "tracking": -0.1,
+  "steps": [
+    {
+      "op": "swash",
+      "items": [
+        {
+          "target": "边.6",
+          "length": 2.35,
+          "bend": 2,
+          "curl": -0.85,
+          "curlRadius": 0.17,
+          "taper": 0.4,
+          "swell": 0.15,
+          "curlTighten": 0.45,
+          "holdWidth": 0.45
+        }
+      ]
+    },
+    {
+      "op": "round",
+      "convex": 0.035,
+      "concave": 0.012
+    }
+  ],
+  "glyphs": {
+    "0": {
+      "scale": 1.0,
+      "dy": 0.02,
+      "rotate": -5
+    },
+    "1": {
+      "scale": 1.14,
+      "dy": -0.05,
+      "rotate": 3
+    },
+    "2": {
+      "scale": 0.94,
+      "dy": 0.03,
+      "rotate": -2
+    },
+    "3": {
+      "scale": 0.9,
+      "dy": -0.17,
+      "rotate": 4
+    },
+    "4": {
+      "scale": 1.0,
+      "dy": -0.12,
+      "rotate": -4
+    }
+  },
+  "outline": {
+    "width": 0.04,
+    "color": "#000000",
+    "each": true
+  },
+  "fill": "#ffffff",
+  "background": "#000000",
+  "padding": 0.22,
+  "decor": [
+    {
+      "type": "icon",
+      "name": "sun",
+      "at": [
+        4.6,
+        0.12
+      ],
+      "size": 1.0,
+      "rotate": 12,
+      "color": "#ff8a1f"
+    },
+    {
+      "type": "line",
+      "points": [
+        [
+          0.05,
+          1.5
+        ],
+        [
+          0.85,
+          1.38
+        ],
+        [
+          1.65,
+          1.5
+        ],
+        [
+          2.45,
+          1.38
+        ],
+        [
+          3.25,
+          1.48
+        ],
+        [
+          4.05,
+          1.3599999999999999
+        ],
+        [
+          4.9,
+          1.42
+        ]
+      ],
+      "smooth": true,
+      "width": 0.09,
+      "taper": [
+        0.12,
+        0.3
+      ],
+      "color": "#2f7cf6",
+      "outline": 0.03
+    },
+    {
+      "type": "line",
+      "points": [
+        [
+          0.9,
+          1.6400000000000001
+        ],
+        [
+          1.7,
+          1.56
+        ],
+        [
+          2.5,
+          1.6600000000000001
+        ],
+        [
+          3.3,
+          1.58
+        ]
+      ],
+      "smooth": true,
+      "width": 0.035,
+      "taper": [
+        0.3,
+        0.4
+      ],
+      "color": "#2f7cf6"
+    },
+    {
+      "type": "icon",
+      "name": "wave",
+      "at": [
+        -0.12,
+        1.22
+      ],
+      "size": 0.62,
+      "color": "#2f7cf6",
+      "outline": 0.03
+    },
+    {
+      "type": "text",
+      "text": "Sea Breeze",
+      "at": [
+        1.15,
+        0.02
+      ],
+      "size": 0.6,
+      "font": "Pacifico",
+      "rotate": -7,
+      "color": "#ffffff",
+      "outline": 0.04,
+      "above": true
+    },
+    {
+      "type": "icon",
+      "name": "spark",
+      "at": [
+        2.45,
+        -0.2
+      ],
+      "size": 0.16,
+      "color": "#ffd23f",
+      "above": true
+    },
+    {
+      "type": "icon",
+      "name": "spark",
+      "at": [
+        2.62,
+        -0.05
+      ],
+      "size": 0.08,
+      "color": "#ffd23f",
+      "above": true
+    }
+  ]
+}

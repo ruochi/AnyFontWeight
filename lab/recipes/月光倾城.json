@@ -1,0 +1,11 @@
+{
+  "lines": ["月光倾城"],
+  "font": "NotoSans",
+  "weight": 400,
+  "tracking": 0.06,
+  "steps": [{ "op": "restroke", "width": 0.07, "pen": "nib", "nibAngle": -35, "nibThin": 0.18, "smooth": 0.004 }],
+  "fill": "#f4ecd6",
+  "glow": "30 #f4ecd655",
+  "background": "radial-gradient(at 50% 40%, #233a5e, #0b1220)",
+  "decor": [{ "type": "orbit", "center": [2.2, 0.78], "rx": 2.6, "ry": 0.5, "rotate": -6, "from": 200, "to": 330, "width": 0.004, "color": "#f4ecd6aa" }]
+}

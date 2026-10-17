@@ -1,0 +1,27 @@
+{
+  "lines": [
+    "不负韶华"
+  ],
+  "font": "hanzi",
+  "tracking": -0.02,
+  "steps": [
+    {
+      "op": "skeleton"
+    },
+    {
+      "op": "transform",
+      "select": {
+        "types": [
+          "横"
+        ]
+      },
+      "rotate": -5
+    },
+    {
+      "op": "brush",
+      "preset": "平笔"
+    }
+  ],
+  "fill": "#14213d",
+  "background": "#e9e4d4"
+}
