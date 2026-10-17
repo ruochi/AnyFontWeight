@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { ensureFont, EXTRA_FONTS } from './fonts.js'
 import { icon, ICON_NAMES, type IconName } from './icons.js'
 import { pathToRings, ringsBounds } from './outline.js'
 import { compose, toDocuments, type Recipe } from './recipe.js'
@@ -31,6 +32,18 @@ describe('描边和装饰', () => {
     expect(outer.maxY - inner.maxY).toBeCloseTo(0.05 * em, 0)
   })
 
+  it('each 时逐字描边，按 z 从小到大叠放', async () => {
+    const r: Recipe = { ...base, lines: ['一二'], outline: { width: 0.04, each: true }, glyphs: { '0': { z: 1 } } }
+    const c = await compose(r)
+    expect(c.outline).toBeUndefined()
+    expect(c.stack).toHaveLength(2)
+    const [first, second] = c.stack!.map((g) => ringsBounds(g.rings).minX)
+    expect(first).toBeGreaterThan(second!)
+    for (const g of c.stack!) expect(ringsBounds(g.outline).minX).toBeCloseTo(ringsBounds(g.rings).minX - 0.04 * em, 0)
+    const { layer } = toDocuments(r, c)
+    expect(layer.match(/fill="#000000"/g)).toHaveLength(2)
+  })
+
   it('收尖的线两头是尖的，中间是满宽', async () => {
     const c = await compose({
       ...base,
@@ -58,6 +71,20 @@ describe('描边和装饰', () => {
       expect(at('#ff0000')).toBeLessThan(at('#111111'))
       expect(at('#111111')).toBeLessThan(at('#0000ff'))
       expect(at('#0000ff')).toBeLessThan(at('#00ff00'))
+    }
+  })
+})
+
+describe('额外字体', () => {
+  it('不在清单里的名字原样交给 flexlayer', async () => {
+    await expect(ensureFont('NotoSans')).resolves.toBeUndefined()
+    await expect(ensureFont(undefined)).resolves.toBeUndefined()
+  })
+
+  it('清单里每个字体都有文件名和地址', () => {
+    for (const [name, f] of Object.entries(EXTRA_FONTS)) {
+      expect(f.url, name).toMatch(/^https:\/\/.+\.(ttf|otf)$/)
+      expect(f.url.endsWith(f.file), name).toBe(true)
     }
   })
 })

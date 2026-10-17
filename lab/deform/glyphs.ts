@@ -3,6 +3,7 @@ import { anyFontWeight } from '../../src/anyFontWeight.js'
 import type { Ring } from '../../src/types.js'
 import { union } from './bool.js'
 import { applyContrast } from './contrast.js'
+import { ensureFont } from './fonts.js'
 import { loadHanzi } from './hanzi.js'
 import { pathToRings, removeSpikes } from './outline.js'
 import type { Skeleton } from './skeleton.js'
@@ -55,6 +56,7 @@ async function hanziGlyphs(text: string, opts: SourceOptions): Promise<SourceGly
 
 export async function loadGlyphs(text: string, opts: SourceOptions): Promise<SourceGlyph[]> {
   if (opts.font === HANZI_FONT) return hanziGlyphs(text, opts)
+  await ensureFont(opts.font)
   const gs = await glyph(text, { font: opts.font, size: opts.size, weight: opts.weight })
   return gs.map((g, index) => {
     let rings = pathToRings(g.d, opts.size * 0.0008)

@@ -3,6 +3,7 @@ import type { Point, Ring } from '../../src/types.js'
 import { ringsToCurvePath } from './bezier.js'
 import { circle, offset, strokeLines, union } from './bool.js'
 import { esc, layerDoc, n } from './draw.js'
+import { ensureFont } from './fonts.js'
 import { HANZI_FONT, loadGlyphs } from './glyphs.js'
 import { loadHanzi, type HanziData } from './hanzi.js'
 import { icon, type IconName } from './icons.js'
@@ -27,8 +28,8 @@ export type Recipe = {
   leading?: number
   /** 每行的水平缩进 */
   indent?: number[]
-  /** 单字微调。键是全文的字序号（从 0 起，跨行连续）或字本身 */
-  glyphs?: Record<string, { dx?: number; dy?: number; scale?: number; rotate?: number }>
+  /** 单字微调。键是全文的字序号（从 0 起，跨行连续）或字本身。`z` 是 `outline.each` 时的叠放次序，大的画在上面 */
+  glyphs?: Record<string, { dx?: number; dy?: number; scale?: number; rotate?: number; z?: number }>
   /** 整体倾斜，正数向右倒 */
   skew?: number
   /** 旧写法，等于排在最前面的一步 `{ op: 'swash', items: swashes }` */
@@ -42,8 +43,11 @@ export type Recipe = {
   /** 原样写到字形 path 上的 flexlayer 属性，比如 `{ "inner-shadow": "0 6 10 #0006" }` */
   attrs?: Record<string, string>
   background?: string
-  /** 字外面一圈描边（贴纸那种黑边），压住底下的装饰。`width` 是 em */
-  outline?: { width: number; color?: string }
+  /**
+   * 字外面一圈描边（贴纸那种黑边），压住底下的装饰。`width` 是 em。
+   * `each` 时每个字各描一圈、按顺序叠着画，后一个字的描边压在前一个字上，挤在一起的字也分得开
+   */
+  outline?: { width: number; color?: string; each?: boolean }
   decor?: Decor[]
   /** 画面四周留白 */
   padding?: number
@@ -152,7 +156,16 @@ export type Trace = {
   }>
 }
 
-export type Composition = { rings: Ring[]; outline?: Ring[]; decor: DecorPiece[]; bounds: Bounds; trace?: Trace }
+export type Composition = {
+  rings: Ring[]
+  /** 整段字的描边 */
+  outline?: Ring[]
+  /** `outline.each` 时逐字的轮廓和描边，按画的顺序 */
+  stack?: Array<{ rings: Ring[]; outline: Ring[] }>
+  decor: DecorPiece[]
+  bounds: Bounds
+  trace?: Trace
+}
 
 export async function compose(r: Recipe, opts: { trace?: boolean } = {}): Promise<Composition> {
   const em = sourceOptions(r).size
@@ -172,6 +185,7 @@ export async function compose(r: Recipe, opts: { trace?: boolean } = {}): Promis
   let out: Ring[] = []
   const ref: Ring[] = []
   const strokes: SStroke[] = []
+  const perGlyph: Array<{ rings: Ring[]; z: number }> = []
   let gi = 0
   r.lines.forEach((line, li) => {
     let x = (r.indent?.[li] ?? 0) * em
@@ -209,7 +223,10 @@ export async function compose(r: Recipe, opts: { trace?: boolean } = {}): Promis
       if (w.strokes) {
         ref.push(...placed)
         for (const s of w.strokes.strokes) strokes.push({ ...s, pts: s.pts.map(place), width: s.width.map((v) => v * sc), glyph: w.index })
-      } else out.push(...placed)
+      } else {
+        out.push(...placed)
+        perGlyph.push({ rings: placed, z: tweak.z ?? 0 })
+      }
       x += advances[gi]! + tracking
       gi++
     }
@@ -234,9 +251,17 @@ export async function compose(r: Recipe, opts: { trace?: boolean } = {}): Promis
     if (trace && last) for (const g of trace.glyphs) g.strokes = last.strokes.filter((s) => s.glyph === g.index)
   }
   const { pieces, points } = await drawDecor(r.decor ?? [], em, r.fill ?? '#ffffff')
-  const outline = r.outline ? offset(union(out), r.outline.width * em) : undefined
-  const b = ringsBounds([...(outline ?? out), points])
-  return { rings: out, outline, decor: pieces, bounds: b, trace }
+  const ow = (r.outline?.width ?? 0) * em
+  const each = r.outline?.each && !r.post?.length
+  const stack = each
+    ? perGlyph
+        .filter((g) => g.rings.length)
+        .sort((a, b) => a.z - b.z)
+        .map((g) => ({ rings: g.rings, outline: offset(union(g.rings), ow) }))
+    : undefined
+  const outline = r.outline && !each ? offset(union(out), ow) : undefined
+  const b = ringsBounds([...(outline ?? stack?.flatMap((g) => g.outline) ?? out), ...out, points])
+  return { rings: out, outline, stack, decor: pieces, bounds: b, trace }
 }
 
 function sparklePath(c: Point, size: number): string {
@@ -264,6 +289,7 @@ function orbitPoints(d: Extract<Decor, { type: 'orbit' }>, em: number): Point[] 
 /** 把小字排成矢量轮廓，横排或竖排，再绕中心旋转。 */
 async function textRings(d: Extract<Decor, { type: 'text' }>, em: number): Promise<Ring[]> {
   const size = d.size * em
+  await ensureFont(d.font)
   const gs = await glyph(d.text, { font: d.font ?? 'NotoSans', size, weight: d.weight ?? 500 })
   const gap = (d.letterSpacing ?? 0) * em
   const rings: Ring[] = []
@@ -465,8 +491,9 @@ export function toDocuments(r: Recipe, c: Composition): { layer: string; svg: st
     const moved = mapRings(rings, (p) => ({ x: p.x + ox, y: p.y + oy }))
     return r.curves === false ? ringsToPath(moved) : ringsToCurvePath(moved, em * 0.0012)
   }
-  const d = toPath(c.rings)
-  const outline = c.outline ? toPath(c.outline) : ''
+  const textParts: Array<[string, string]> = c.stack
+    ? c.stack.map((g) => [toPath(g.outline), toPath(g.rings)])
+    : [[c.outline ? toPath(c.outline) : '', toPath(c.rings)]]
   const outlineColor = r.outline?.color ?? '#000000'
   const glow = r.glow ? ` glow="${esc(r.glow)}"` : ''
   const extra = Object.entries(r.attrs ?? {})
@@ -479,8 +506,10 @@ export function toDocuments(r: Recipe, c: Composition): { layer: string; svg: st
   const layer = layerDoc(w, h, bg.includes('gradient') ? '#000000' : bg, [
     `<rect x="0" y="0" width="${n(w)}" height="${n(h)}" fill="${esc(bg)}" />`,
     ...group(pieceDocs(below, 'layer')),
-    outline ? `<path d="${outline}" fill="${esc(outlineColor)}" stroke="none" />` : '',
-    `<path d="${d}" fill="${esc(fill)}" stroke="none"${glow}${extra} />`,
+    ...textParts.flatMap(([o, t]) => [
+      o ? `<path d="${o}" fill="${esc(outlineColor)}" stroke="none" />` : '',
+      `<path d="${t}" fill="${esc(fill)}" stroke="none"${glow}${extra} />`,
+    ]),
     ...group(pieceDocs(above, 'layer')),
   ].filter(Boolean))
   const svgFill = fill.includes('gradient') ? '#ffffff' : fill
@@ -488,8 +517,10 @@ export function toDocuments(r: Recipe, c: Composition): { layer: string; svg: st
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${n(w)} ${n(h)}" width="${n(w)}" height="${n(h)}">`,
     bg.includes('gradient') ? '' : `<rect width="100%" height="100%" fill="${bg}"/>`,
     ...group(pieceDocs(below, 'svg')),
-    outline ? `<path d="${outline}" fill="${outlineColor}" fill-rule="nonzero"/>` : '',
-    `<path d="${d}" fill="${svgFill}" fill-rule="nonzero"/>`,
+    ...textParts.flatMap(([o, t]) => [
+      o ? `<path d="${o}" fill="${outlineColor}" fill-rule="nonzero"/>` : '',
+      `<path d="${t}" fill="${svgFill}" fill-rule="nonzero"/>`,
+    ]),
     ...group(pieceDocs(above, 'svg')),
     `</svg>`,
   ]
