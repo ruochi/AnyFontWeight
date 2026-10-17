@@ -127,3 +127,59 @@ describe('笔刷预设', () => {
     expect(thick(h, (t) => ({ x: 200, y: 200 + t }))).toBeLessThan(thick(v, (t) => ({ x: 200 + t, y: 200 })))
   })
 })
+
+describe('形状笔尖', () => {
+  const across = (rings: ReturnType<typeof brush>, at: Point, dir: Point) => {
+    const ink = inkTest(rings)
+    let n = 0
+    for (let t = -60; t <= 60; t += 0.25) if (ink({ x: at.x + dir.x * t, y: at.y + dir.y * t })) n++
+    return n * 0.25
+  }
+  const h = stroke(Array.from({ length: 41 }, (_, i) => ({ x: 40 + i * 8, y: 200 })))
+  const v = stroke(Array.from({ length: 41 }, (_, i) => ({ x: 200, y: 40 + i * 8 })), 20, '竖')
+  const d = stroke(Array.from({ length: 41 }, (_, i) => ({ x: 60 + i * 7, y: 60 + i * 7 })), 20, '捺')
+  const diag = { x: Math.SQRT1_2, y: -Math.SQRT1_2 }
+
+  it('圆笔扫出等宽的线，宽度就是笔尖直径', () => {
+    const rings = brush(glyph(h), { footprint: { shape: 'circle', size: [0.05, 0.05] } }, EM)
+    expect(across(rings, { x: 200, y: 200 }, { x: 0, y: 1 })).toBeCloseTo(20, 0)
+  })
+
+  it('方块随走向转时斜笔画也等宽，不转时斜笔画粗到约 1.4 倍', () => {
+    const follow = brush(glyph(d), { footprint: { shape: 'rect', size: [0.05, 0.05], follow: true } }, EM)
+    const fixed = brush(glyph(d), { footprint: { shape: 'rect', size: [0.05, 0.05] } }, EM)
+    expect(across(follow, { x: 200, y: 200 }, diag)).toBeCloseTo(20, 0)
+    expect(across(fixed, { x: 200, y: 200 }, diag) / 20).toBeCloseTo(Math.SQRT2, 1)
+  })
+
+  it('横扁笔不转：横细竖粗', () => {
+    const fp = { shape: 'rect' as const, size: [0.08, 0.02] as [number, number] }
+    expect(across(brush(glyph(h), { footprint: fp }, EM), { x: 200, y: 200 }, { x: 0, y: 1 })).toBeCloseTo(8, 0)
+    expect(across(brush(glyph(v), { footprint: fp }, EM), { x: 200, y: 200 }, { x: 1, y: 0 })).toBeCloseTo(32, 0)
+  })
+
+  it('横的收笔顿笔在末端上方顿出三角，中段不变', () => {
+    const fp = { shape: 'rect' as const, size: [0.08, 0.02] as [number, number], byType: { 横: { end: { length: 0.1, scale: [1, 3] as [number, number], shift: 0.02 } } } }
+    const ink = inkTest(brush(glyph(h), { footprint: fp }, EM))
+    expect(ink({ x: 355, y: 200 - 12 })).toBe(true)
+    expect(ink({ x: 355, y: 200 + 8 })).toBe(false)
+    expect(ink({ x: 200, y: 200 - 6 })).toBe(false)
+  })
+
+  it('peak 让顿笔最重的地方在末端之前，末端回落', () => {
+    const top = (peak: number) => {
+      const fp = { shape: 'rect' as const, size: [0.02, 0.02] as [number, number], byType: { 横: { end: { length: 0.1, scale: [1, 4] as [number, number], shift: 0.03, peak, release: 0 } } } }
+      const ink = inkTest(brush(glyph(h), { footprint: fp }, EM))
+      const column = (x: number) => {
+        let y = 200
+        while (ink({ x, y: y - 0.5 })) y -= 0.5
+        return 200 - y
+      }
+      return { end: column(359), before: column(345) }
+    }
+    const flat = top(0)
+    const pressed = top(0.4)
+    expect(flat.end).toBeGreaterThan(flat.before)
+    expect(pressed.before).toBeGreaterThan(pressed.end)
+  })
+})
