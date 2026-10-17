@@ -22,7 +22,7 @@
 4. **逐字操作**：配方里的 `steps` 依次作用在每个字上。末端类操作改轮廓的局部，骨架类操作按中心线重新生成轮廓，形状类操作用 [Clipper](http://www.angusj.com/delphi/clipper.php) 做布尔运算和偏移。骨架字形的操作见下文[骨架字形](#骨架字形)。
 5. **排版**：按配方分行、错位、倾斜。
 6. **整段操作**：`post` 里的操作作用在排好的整段文字上，比如一刀切过所有字，或者把字和字连笔。
-7. **装饰和输出**：加星星、环线、拼音、线条，交给 flexlayer 渲染。轮廓先拟合成三次贝塞尔曲线（误差约 0.0012 em）再写进 SVG 和 `.layer`，配方里写 `"curves": false` 则保留折线。
+7. **装饰和输出**：加星星、环线、拼音、线条、图标和贴纸描边，交给 flexlayer 渲染。轮廓先拟合成三次贝塞尔曲线（误差约 0.0012 em）再写进 SVG 和 `.layer`，配方里写 `"curves": false` 则保留折线。
 
 ## 用法
 
@@ -88,6 +88,7 @@ npx tsx lab/deform/review.ts lab/recipes/山海不可平.json --ref Kai
 | `swashes` | 旧写法，等于排在最前面的 `{ "op": "swash", "items": [...] }` |
 | `fill`、`glow`、`background` | 字色、发光、背景（可以写 `linear-gradient(...)`、`radial-gradient(...)`） |
 | `attrs` | 原样写到字形上的 flexlayer 效果，如 `{ "inner-shadow": "0 -10 14 #0006", "shadow": "0 14 0 #b23a1f" }` |
+| `outline` | `{ width, color }`，整段字外面一圈描边，压住底下的装饰 |
 | `decor` | 装饰，见下文。坐标以第一行字身左上角为原点 |
 | `padding` | 画面四周留白 |
 | `curves` | 默认 `true`，输出前把轮廓拟合成贝塞尔曲线 |
@@ -163,12 +164,25 @@ npx tsx lab/deform/review.ts lab/recipes/山海不可平.json --ref Kai
 
 | `type` | 参数 |
 | --- | --- |
-| `sparkle`、`dot` | `at`、`size`、`color` |
-| `orbit` | `center`、`rx`、`ry`、`rotate`、`from`、`to`、`width`、`color` |
-| `line` | `points`、`width`、`dash`（[实, 虚]）、`cap`、`color` |
-| `text` | `text`、`at`（文字块中心）、`size`、`font`、`weight`、`letterSpacing`、`vertical`、`rotate`、`color` |
+| `sparkle`、`dot` | `at`、`size` |
+| `orbit` | `center`、`rx`、`ry`、`rotate`、`from`、`to`、`width`、`taper`、`dash` |
+| `line` | `points`、`width`、`dash`（[实, 虚]）、`cap`、`smooth`、`taper` |
+| `text` | `text`、`at`（文字块中心）、`size`、`font`、`weight`、`letterSpacing`、`vertical`、`rotate`、`skew` |
+| `icon` | `name`、`at`（中心）、`size`（宽度）、`rotate`、`flip` |
 
-拼音带声调时用 `Inter` 字体，NotoSans 里没有这些字母。NotoSans 的字身高约 1.45 em，墨迹大致在 y 0.32–1.23 em 之间，摆装饰时可以参考。
+每种装饰都可以写：
+
+| 字段 | 含义 |
+| --- | --- |
+| `color` | 颜色，默认同字色 |
+| `above` | 画在字上面；默认在字下面，会被字的描边压住 |
+| `outline`、`outlineColor` | 给这件装饰自己加一圈描边（em），默认黑色，紧挨着画在它下面 |
+
+`taper` 让环线、折线两头收尖，写全长的比例，一个数两头一样，`[起, 收]` 分开写，收尖段按四分之一正弦从 0 长到 `width`。`smooth` 让折线用 Catmull-Rom 曲线穿过每个折点。`skew` 是小字的斜体角度，正数向右倒，用来补没有斜体字体的缺。图标在 `lab/deform/icons.ts`，有 `paper-plane`、`sun`、`wave`、`plane`、`mountain`、`spark`。
+
+配方写 `"outline": { "width": 0.045, "color": "#000000" }` 给整段字加一圈描边，像贴纸的黑边：画的顺序是背景、字下面的装饰、字的描边、字、字上面的装饰，所以穿过字的环线、浪花会在字边断开。
+
+拼音带声调时用 `Inter` 字体，NotoSans 里没有这些字母。NotoSans 的字身高约 1.45 em，墨迹大致在 y 0.32–1.23 em 之间，摆装饰时可以参考。`"font": "hanzi"` 的字身是 1 em 见方。
 
 ## 开源骨架加笔刷
 
@@ -233,7 +247,7 @@ npx tsx lab/deform/pens.ts [文字，默认 永国东书心] [输出路径]
 | `byType` | 按段的走向（横、竖、撇、捺、点、提）各用各的 `start`、`end`，写 `null` 是不做 |
 | `turns` | 折笔的转角处做不做上一段的收笔，默认做，宋体横折的肩就是这样顿出来的 |
 
-折笔按 40° 以上的转角分段，每段按走向找规则，末尾短的一段是钩，按提。动作从端点往里 `length` 开始，越靠近端点变得越多：
+折笔按 40° 以上的转角分段，每段按走向找规则，末尾短的一段是钩，按提。跟着走向转的笔尖在转角处一点点转过去，外角是圆的。起笔、收笔只在自由端做，接在别的笔画上的一头保持原样，免得接头斜出一角。动作从端点往里 `length` 开始，越靠近端点变得越多：
 
 | 字段 | 含义 |
 | --- | --- |
@@ -365,6 +379,12 @@ npx tsx lab/deform/pens.ts [文字，默认 永国东书心] [输出路径]
 | 生僻字 | 合成粗字重，大圆角，内阴影加实心投影 |
 | 猪事皆闹 | 粗方头重描，交叉处断开，方向吸附到 45° |
 | 来日方长 | 外扩，几何化吸附 45°，内刻线 |
+| 奔赴山海 | 开源骨架规整，横画斜 5°，竖长矩形笔尖跟着走向转、两头斜切，像粗马克笔；字有大有小、各自歪一点；黑描边压断黄色收尖的环线，虚线轨迹接纸飞机，斜体英文副标题 |
+| 我们去看海 | 开源骨架规整、圆转，粗圆形笔尖，像手写圆体；黑描边，蓝色收尖的平滑浪线和浪花、橙色太阳在字下面，描边的英文标题压在字上 |
+
+![奔赴山海](examples/奔赴山海.png)
+
+![我们去看海](examples/我们去看海.png)
 
 ![海棠未雨](examples/海棠未雨.png)
 
@@ -460,5 +480,6 @@ npx tsx lab/deform/review.ts lab/bench/留出.json --brief
 - `synthWeight` 合成到很粗时，笔画重叠处会出小尖刺，`offset` 更干净。
 - `round` 的凹角半径和 `offset` 都会让窄字腔变窄甚至填死。
 - 延长段只和原字形取并集，不会自动避让别的字，撞上了要改 `bend` 或 `length`。
+- 装饰的位置都要手写坐标，不会自动绕开字；可用的字体里没有手写体和真斜体，英文标题只能用衬线字体加 `skew` 近似。
 - `contrast` 偏移量太大时字腔会变形，大约 0.015 em 以内比较稳。
 - 贝塞尔拟合按 40° 以上的转角断开，圆滑的部分合并成曲线；锯齿很多的轮廓（如抖动过的）节点不会少多少。
