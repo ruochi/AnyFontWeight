@@ -1,6 +1,7 @@
 import type { Point, Ring } from '../../src/types.js'
 import { circle, difference, offset, strokeLines, sweep, union, type Cap, type Join } from './bool.js'
 import { BRUSHES } from './brushes.js'
+import { footprintStroke, type Footprint } from './pen.js'
 import { simplifyLine, snapLine } from './outline.js'
 import { shape, type ShapeName } from './shapes.js'
 import { gaussianSmooth, polyLength, type StrokeType } from './skeleton.js'
@@ -382,6 +383,8 @@ export type BrushParams = {
   hollow?: number
   /** 不画连续的线，沿笔画每隔 `spacing` 盖一个图形；大小是 `size`（em）或笔宽的 `scale` 倍 */
   stamp?: { shape?: ShapeName; spacing?: number; size?: number; scale?: number; angle?: number }
+  /** 形状笔尖（圆、方、矩形），可以随走向转，起笔、收笔、转折处转笔、顿笔，见 `pen.ts`。写了它 `width` 不起作用 */
+  footprint?: Footprint
 }
 
 export function resolveBrush(p: BrushParams): BrushParams {
@@ -488,8 +491,9 @@ export function brush(sg: StrokeGlyph, params: BrushParams, em: number): Ring[] 
     }
     const r = resampleW(s.pts, s.width, em * 0.006)
     let pts = r.pts
-    let ws =
-      p.width === 'source' || p.width == null
+    let ws = p.footprint
+      ? r.width.map(() => 1)
+      : p.width === 'source' || p.width == null
         ? r.width.map((w) => w * (p.scale ?? 1))
         : r.width.map(() => (p.widthByType?.[s.type] ?? (p.width as number)) * em)
     if (s.link) ws = ws.map((w) => w * s.link!)
@@ -513,7 +517,7 @@ export function brush(sg: StrokeGlyph, params: BrushParams, em: number): Ring[] 
         return w * k
       })
     }
-    if (fit && cap !== 'butt' && !s.link && p.pen !== 'nib') {
+    if (fit && cap !== 'butt' && !s.link && p.pen !== 'nib' && !p.footprint) {
       const trim = (atStart: boolean) => {
         const end = atStart ? s.start : s.end
         if (end.kind !== 'free' || pts.length < 3) return
@@ -536,6 +540,8 @@ export function brush(sg: StrokeGlyph, params: BrushParams, em: number): Ring[] 
     }
     if (p.stamp && !s.link) {
       parts.push(...stamps(pts, ws, p.stamp, em, placed))
+    } else if (p.footprint) {
+      parts.push(...footprintStroke(pts, ws, s.type, corners(pts, em, 40), p.footprint, em, !!s.link))
     } else if (p.pen === 'nib') {
       const w = ws.reduce((a, b) => a + b, 0) / ws.length
       parts.push(...sweep([pts], nib(w, p.nibThin ?? 0.25, p.nibAngle ?? -40)))
